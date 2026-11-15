@@ -3,6 +3,7 @@
 use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::*;
 
+use super::frame::Insets;
 use super::{Result, Wm};
 use crate::layout::{self, Area, Layout, Params, WorkspaceLayout};
 use crate::x11::geometry::Rect;
@@ -11,7 +12,7 @@ const RATIO_STEP: f32 = 0.05;
 const MAX_MASTERS: usize = 8;
 
 impl Wm {
-    fn property_strings(&self, window: Window, property: Atom) -> Vec<String> {
+    pub(super) fn property_strings(&self, window: Window, property: Atom) -> Vec<String> {
         let reply = self
             .conn
             .get_property(false, window, property, AtomEnum::STRING, 0, 256)
@@ -80,11 +81,21 @@ impl Wm {
             return Ok(());
         };
         let border = self.settings.border_width as i32;
+        let insets = if self.clients[index].frame.is_some() {
+            self.insets_for(index)
+        } else {
+            Insets {
+                left: border,
+                right: border,
+                top: border,
+                bottom: border,
+            }
+        };
         let rect = Rect::new(
-            frame.x,
-            frame.y,
-            (frame.w - 2 * border).max(1) as u32,
-            (frame.h - 2 * border).max(1) as u32,
+            frame.x + insets.left,
+            frame.y + insets.top,
+            (frame.w - insets.left - insets.right).max(1) as u32,
+            (frame.h - insets.top - insets.bottom).max(1) as u32,
         );
 
         let client = &mut self.clients[index];
@@ -92,17 +103,7 @@ impl Wm {
             client.float_rect = Some(client.rect);
             client.tiled = true;
         }
-        client.rect = rect;
-        self.conn.configure_window(
-            window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h)
-                .border_width(border as u32),
-        )?;
-        Ok(())
+        self.set_geometry(window, rect, border as u32)
     }
 
     fn release(&mut self, window: Window) -> Result<()> {
@@ -113,16 +114,8 @@ impl Wm {
         let Some(rect) = client.float_rect.take() else {
             return Ok(());
         };
-        client.rect = rect;
-        self.conn.configure_window(
-            window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h),
-        )?;
-        Ok(())
+        let border = self.settings.border_width;
+        self.set_geometry(window, rect, border)
     }
 
     pub(super) fn arrange(&mut self) -> Result<()> {

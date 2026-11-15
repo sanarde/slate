@@ -2,12 +2,16 @@
 
 use std::error::Error;
 
+use std::collections::HashMap;
+use std::time::Instant;
+
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::io::Errno;
 use rustix::time::Timespec;
-use x11rb::connection::Connection;
+use x11rb::connection::{Connection, RequestConnection};
 use x11rb::properties::WmHints;
 use x11rb::protocol::randr::{self, ConnectionExt as _};
+use x11rb::protocol::shape;
 use x11rb::protocol::xproto::*;
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -17,10 +21,14 @@ use x11rb::{CURRENT_TIME, NONE};
 use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
+mod frame;
 mod tiling;
+
+use frame::Insets;
 use crate::bindings::{Action, Binding};
+use crate::font::Fonts;
 use crate::layout::WorkspaceLayout;
-use crate::config::{ModKeySetting, Settings};
+use crate::config::{ButtonKind, ModKeySetting, Settings};
 use crate::source::ConfigSource;
 use crate::spawn;
 
@@ -68,9 +76,13 @@ struct Client {
     pending_unmaps: u32,
     accepts_input: bool,
     above: bool,
+    frame: Option<Window>,
+    title: String,
+    painted: Option<frame::Painted>,
+    shaped: Option<(i32, i32, i32)>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Edges {
     left: bool,
     right: bool,
@@ -104,6 +116,15 @@ pub struct Wm {
     settings: Settings,
     config: ConfigSource,
     mod_mask: u16,
+    fonts: Fonts,
+    depth: u8,
+    gc: Gcontext,
+    cursors: HashMap<u16, Cursor>,
+    shape_available: bool,
+    hover: Option<(Window, frame::FrameHit)>,
+    pressed: Option<(Window, ButtonKind)>,
+    last_title_click: Option<(Window, Instant)>,
+    paint_generation: u64,
     running: bool,
 }
 
@@ -122,6 +143,13 @@ impl Wm {
             .map_err(|_| "another window manager is running")?;
 
         let atoms = Atoms::new(&conn)?.reply()?;
+        let depth = conn.setup().roots[screen_num].root_depth;
+        let gc = conn.generate_id()?;
+        conn.create_gc(gc, root, &CreateGCAux::new())?;
+        let shape_available = conn
+            .extension_information(shape::X11_EXTENSION_NAME)?
+            .is_some();
+        let fonts = Fonts::load(&settings.decoration.title_font);
         let mut wm = Wm {
             conn,
             root,
@@ -141,10 +169,20 @@ impl Wm {
             mod_mask: mod_mask_of(settings.mod_key),
             settings,
             config,
+            fonts,
+            depth,
+            gc,
+            cursors: HashMap::new(),
+            shape_available,
+            hover: None,
+            pressed: None,
+            last_title_click: None,
+            paint_generation: 0,
             running: true,
         };
 
         wm.set_cursor()?;
+        wm.create_cursors()?;
         wm.publish_root_properties()?;
         wm.grab_keys()?;
         wm.conn
@@ -219,7 +257,20 @@ impl Wm {
         if old.tiling != self.settings.tiling {
             self.reset_layouts();
         }
-        if old.border_width != self.settings.border_width {
+        if old.border_width != self.settings.border_width || old.decoration != self.settings.decoration {
+            if old.decoration.title_font != self.settings.decoration.title_font {
+                self.fonts = Fonts::load(&self.settings.decoration.title_font);
+            }
+            self.paint_generation += 1;
+            let windows: Vec<Window> = self
+                .clients
+                .iter()
+                .filter(|client| !client.hidden)
+                .map(|client| client.window)
+                .collect();
+            for window in windows {
+                self.sync_frame(window)?;
+            }
             let windows: Vec<Window> = self.clients.iter().map(|client| client.window).collect();
             for window in windows {
                 self.apply_state(window)?;
@@ -249,8 +300,9 @@ impl Wm {
                 &[last as u32],
             )?;
             if last == self.workspace && self.clients[index].hidden && !self.clients[index].minimized {
+                self.sync_frame(window)?;
                 self.clients[index].hidden = false;
-                self.conn.map_window(window)?;
+                self.map_client(window)?;
             }
         }
         Ok(())
@@ -275,6 +327,30 @@ impl Wm {
         )?;
         self.conn
             .change_window_attributes(self.root, &ChangeWindowAttributesAux::new().cursor(cursor))?;
+        self.conn.close_font(font)?;
+        Ok(())
+    }
+
+    fn create_cursors(&mut self) -> Result<()> {
+        let font = self.conn.generate_id()?;
+        self.conn.open_font(font, b"cursor")?;
+        for glyph in [68u16, 134, 136, 12, 14, 70, 96, 138, 16] {
+            let cursor = self.conn.generate_id()?;
+            self.conn.create_glyph_cursor(
+                cursor,
+                font,
+                font,
+                glyph,
+                glyph + 1,
+                0,
+                0,
+                0,
+                0xffff,
+                0xffff,
+                0xffff,
+            )?;
+            self.cursors.insert(glyph, cursor);
+        }
         self.conn.close_font(font)?;
         Ok(())
     }
@@ -508,15 +584,35 @@ impl Wm {
             Event::PropertyNotify(event) => {
                 if self.docks.contains(&event.window) {
                     self.update_work_areas()?;
+                } else if event.atom == self.atoms._NET_WM_NAME || event.atom == u32::from(AtomEnum::WM_NAME) {
+                    self.update_title(event.window)?;
                 }
                 Ok(())
             }
+            Event::Expose(event) => {
+                if event.count == 0
+                    && let Some(window) = self.client_of_frame(event.window)
+                {
+                    if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
+                        client.painted = None;
+                    }
+                    self.repaint(window)?;
+                }
+                Ok(())
+            }
+            Event::LeaveNotify(event) => self.frame_leave(event.event),
             Event::KeyPress(event) => self.key_press(&event),
             Event::ButtonPress(event) => self.button_press(&event),
-            Event::MotionNotify(event) => self.motion(event.root_x as i32, event.root_y as i32),
+            Event::MotionNotify(event) => {
+                if self.drag.is_some() {
+                    self.motion(event.root_x as i32, event.root_y as i32)
+                } else {
+                    self.frame_motion(&event)
+                }
+            }
             Event::ButtonRelease(_) => {
                 self.drag = None;
-                Ok(())
+                self.frame_release()
             }
             Event::RandrScreenChangeNotify(_) => self.refresh_monitors(),
             Event::Error(error) => {
@@ -608,8 +704,13 @@ impl Wm {
         let monitor = self.pointer_monitor();
         let area = self.work_areas.get(monitor).copied().unwrap_or(self.screen);
         let border = self.settings.border_width;
+        let title = if self.should_frame(window) {
+            self.settings.decoration.titlebar_height
+        } else {
+            0
+        };
         let max_w = area.w.saturating_sub(2 * border).max(MIN_SIZE);
-        let max_h = area.h.saturating_sub(2 * border).max(MIN_SIZE);
+        let max_h = area.h.saturating_sub(2 * border + title).max(MIN_SIZE);
         let w = (geometry.width as u32).clamp(MIN_SIZE, max_w);
         let h = (geometry.height as u32).clamp(MIN_SIZE, max_h);
 
@@ -622,16 +723,8 @@ impl Wm {
             (geometry.x as i32, geometry.y as i32)
         };
         let rect = Rect::new(x, y, w, h);
+        let mapped = self.conn.get_window_attributes(window)?.reply()?.map_state == MapState::VIEWABLE;
 
-        self.conn.configure_window(
-            window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h)
-                .border_width(border),
-        )?;
         self.conn.grab_button(
             false,
             window,
@@ -667,6 +760,10 @@ impl Wm {
             pending_unmaps: 0,
             accepts_input,
             above: initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
+            frame: None,
+            title: String::new(),
+            painted: None,
+            shaped: None,
         });
         self.conn.change_property32(
             PropMode::REPLACE,
@@ -675,7 +772,11 @@ impl Wm {
             AtomEnum::CARDINAL,
             &[self.workspace as u32],
         )?;
-        self.conn.map_window(window)?;
+        self.frame_client(window, mapped)?;
+        if self.clients.iter().any(|client| client.window == window && client.frame.is_none()) {
+            self.set_geometry(window, rect, border)?;
+        }
+        self.map_client(window)?;
         self.update_client_list()?;
         self.register_tiled(window);
         self.focus(window)?;
@@ -706,15 +807,28 @@ impl Wm {
         }
         self.workspace = target;
 
-        for client in &mut self.clients {
-            let visible = client.workspace == target && !client.minimized;
-            if visible && client.hidden {
-                client.hidden = false;
-                self.conn.map_window(client.window)?;
-            } else if !visible && !client.hidden {
-                client.hidden = true;
-                client.pending_unmaps += 1;
-                self.conn.unmap_window(client.window)?;
+        let changes: Vec<(Window, bool)> = self
+            .clients
+            .iter()
+            .filter_map(|client| {
+                let visible = client.workspace == target && !client.minimized;
+                if visible && client.hidden {
+                    Some((client.window, true))
+                } else if !visible && !client.hidden {
+                    Some((client.window, false))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (window, show) in changes {
+            if show {
+                self.sync_frame(window)?;
+                self.set_hidden(window, false);
+                self.map_client(window)?;
+            } else {
+                self.set_hidden(window, true);
+                self.unmap_client(window)?;
             }
         }
         self.conn.change_property32(
@@ -757,8 +871,7 @@ impl Wm {
         }
 
         client.hidden = true;
-        client.pending_unmaps += 1;
-        self.conn.unmap_window(window)?;
+        self.unmap_client(window)?;
 
         self.arrange()?;
         let current = self.workspace;
@@ -782,7 +895,18 @@ impl Wm {
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
-        self.clients.remove(index);
+        let removed = self.clients.remove(index);
+        if let Some(frame) = removed.frame {
+            self.conn
+                .reparent_window(window, self.root, removed.rect.x as i16, removed.rect.y as i16)?;
+            self.conn.destroy_window(frame)?;
+        }
+        if self.hover.as_ref().is_some_and(|(hovered, _)| *hovered == window) {
+            self.hover = None;
+        }
+        if self.pressed.as_ref().is_some_and(|(pressed, _)| *pressed == window) {
+            self.pressed = None;
+        }
         self.forget_tiled(window);
         if self.drag.as_ref().is_some_and(|drag| drag.window == window) {
             self.drag = None;
@@ -843,8 +967,9 @@ impl Wm {
         let accepts_input = client.accepts_input;
         self.clients.push(client);
 
+        let top = self.top_of(window);
         self.conn
-            .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+            .configure_window(top, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
         if !accepts_input && !take_focus {
             return self.restack();
         }
@@ -868,10 +993,10 @@ impl Wm {
             return Ok(());
         }
         client.minimized = true;
-        if !client.hidden {
-            client.hidden = true;
-            client.pending_unmaps += 1;
-            self.conn.unmap_window(window)?;
+        let was_hidden = client.hidden;
+        client.hidden = true;
+        if !was_hidden {
+            self.unmap_client(window)?;
         }
         self.minimize_order.push(window);
         self.apply_state(window)?;
@@ -905,11 +1030,10 @@ impl Wm {
 
         if workspace != self.workspace {
             self.switch_workspace(workspace)?;
-        } else if let Some(client) = self.clients.iter_mut().find(|client| client.window == window)
-            && client.hidden
-        {
-            client.hidden = false;
-            self.conn.map_window(window)?;
+        } else if self.clients.iter().any(|client| client.window == window && client.hidden) {
+            self.sync_frame(window)?;
+            self.set_hidden(window, false);
+            self.map_client(window)?;
         }
         self.apply_state(window)?;
         self.arrange()?;
@@ -936,21 +1060,34 @@ impl Wm {
             }
         }
         for client in self.clients.iter().filter(|client| client.above && !client.hidden) {
-            self.conn
-                .configure_window(client.window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+            self.conn.configure_window(
+                client.frame.unwrap_or(client.window),
+                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+            )?;
         }
         Ok(())
     }
 
-    fn update_borders(&self) -> Result<()> {
-        for client in &self.clients {
-            let color = if self.focused == Some(client.window) {
+    fn set_hidden(&mut self, window: Window, hidden: bool) {
+        if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
+            client.hidden = hidden;
+        }
+    }
+
+    fn update_borders(&mut self) -> Result<()> {
+        let windows: Vec<(Window, bool)> = self.clients.iter().map(|client| (client.window, client.frame.is_some())).collect();
+        for (window, framed) in windows {
+            if framed {
+                self.repaint(window)?;
+                continue;
+            }
+            let color = if self.focused == Some(window) {
                 self.settings.border_focused
             } else {
                 self.settings.border_unfocused
             };
             self.conn
-                .change_window_attributes(client.window, &ChangeWindowAttributesAux::new().border_pixel(color))?;
+                .change_window_attributes(window, &ChangeWindowAttributesAux::new().border_pixel(color))?;
         }
         Ok(())
     }
@@ -1014,21 +1151,26 @@ impl Wm {
         let (rect, border) = if fullscreen {
             (self.monitors.get(monitor).copied().unwrap_or(self.screen), 0)
         } else if maximized {
-            (self.work_areas.get(monitor).copied().unwrap_or(self.screen), 0)
+            let area = self.work_areas.get(monitor).copied().unwrap_or(self.screen);
+            let insets = if self.clients[index].frame.is_some() {
+                self.insets_when_framed(true, false)
+            } else {
+                Insets::default()
+            };
+            (
+                Rect::new(
+                    area.x + insets.left,
+                    area.y + insets.top,
+                    (area.w as i32 - insets.left - insets.right).max(1) as u32,
+                    (area.h as i32 - insets.top - insets.bottom).max(1) as u32,
+                ),
+                0,
+            )
         } else {
             (restore.unwrap_or(current), self.settings.border_width)
         };
 
-        self.clients[index].rect = rect;
-        self.conn.configure_window(
-            window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h)
-                .border_width(border),
-        )?;
+        self.set_geometry(window, rect, border)?;
 
         let mut states = Vec::new();
         if fullscreen {
@@ -1048,8 +1190,9 @@ impl Wm {
             .change_property32(PropMode::REPLACE, window, self.atoms._NET_WM_STATE, AtomEnum::ATOM, &states)?;
 
         if fullscreen {
+            let top = self.top_of(window);
             self.conn
-                .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+                .configure_window(top, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
         }
         Ok(())
     }
@@ -1092,15 +1235,8 @@ impl Wm {
             client.rect.h = (event.height as u32).max(1);
         }
         let rect = client.rect;
-        self.conn.configure_window(
-            event.window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h),
-        )?;
-        Ok(())
+        let border = self.settings.border_width;
+        self.set_geometry(event.window, rect, border)
     }
 
     fn client_message(&mut self, event: &ClientMessageEvent) -> Result<()> {
@@ -1178,8 +1314,9 @@ impl Wm {
             return self.focus(candidates[0]);
         }
         let top = candidates[candidates.len() - 1];
+        let top_window = self.top_of(top);
         self.conn
-            .configure_window(top, &ConfigureWindowAux::new().stack_mode(StackMode::BELOW))?;
+            .configure_window(top_window, &ConfigureWindowAux::new().stack_mode(StackMode::BELOW))?;
         if let Some(index) = self.clients.iter().position(|client| client.window == top) {
             let client = self.clients.remove(index);
             self.clients.insert(0, client);
@@ -1270,6 +1407,9 @@ impl Wm {
     }
 
     fn button_press(&mut self, event: &ButtonPressEvent) -> Result<()> {
+        if self.client_of_frame(event.event).is_some() {
+            return self.frame_press(event);
+        }
         let window = event.event;
         let Some(client) = self.clients.iter().find(|client| client.window == window) else {
             self.conn.allow_events(Allow::REPLAY_POINTER, CURRENT_TIME)?;
@@ -1359,17 +1499,8 @@ impl Wm {
             }
         }
 
-        if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
-            client.rect = rect;
-        }
-        self.conn.configure_window(
-            window,
-            &ConfigureWindowAux::new()
-                .x(rect.x)
-                .y(rect.y)
-                .width(rect.w)
-                .height(rect.h),
-        )?;
+        let border = self.settings.border_width;
+        self.set_geometry(window, rect, border)?;
         Ok(())
     }
 }
