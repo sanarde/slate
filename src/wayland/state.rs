@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsString;
 use std::sync::Arc;
@@ -37,7 +39,9 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::X11Wm;
 
+use super::animation::Animations;
 use super::cursor::Cursors;
+use super::shadow::{Key as ShadowKey, ShadowSet};
 use super::decoration::Hit;
 use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
@@ -69,6 +73,8 @@ pub struct Slate {
     pub workspace: usize,
     pub minimized: Vec<(Window, Point<i32, Logical>)>,
     pub tile_order: Vec<Window>,
+    pub animations: Animations,
+    pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
     pub workspace_layouts: Vec<WorkspaceLayout>,
     pub outputs: Vec<OutputRecord>,
     pub output_management: OutputManagementState,
@@ -166,6 +172,8 @@ impl Slate {
             workspace: 0,
             minimized: Vec::new(),
             tile_order: Vec::new(),
+            animations: Animations::default(),
+            shadows: RefCell::new(HashMap::new()),
             workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); 9],
             outputs: Vec::new(),
             output_management: OutputManagementState::new(&display_handle),
