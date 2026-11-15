@@ -39,6 +39,17 @@ pub fn output_elements(
         }
     }
 
+    if let Some(surface) = super::lock::surface_for(state, output) {
+        let scale = output.current_scale().fractional_scale();
+        let lock_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+            render_elements_from_surface_tree(renderer, &surface, (0, 0), scale, 1.0, Kind::Unspecified);
+        elements.extend(lock_elements.into_iter().map(OutputElement::Surface));
+        return elements;
+    }
+    if state.lock.is_some() {
+        return elements;
+    }
+
     match space_render_elements(renderer, [&state.space], output, 1.0) {
         Ok(space) => elements.extend(space.into_iter().map(OutputElement::Space)),
         Err(error) => tracing::error!(?error, "failed to collect space elements"),

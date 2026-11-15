@@ -34,6 +34,8 @@ impl WlrLayerShellHandler for Slate {
         if let Err(error) = map.map_layer(&LayerSurface::new(surface, namespace)) {
             tracing::warn!(%error, "failed to map layer surface");
         }
+        drop(map);
+        super::super::scale::update(self);
     }
 
     fn new_popup(&mut self, _parent: wlr_layer::LayerSurface, popup: PopupSurface) {

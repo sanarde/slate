@@ -92,6 +92,8 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
         }
         let raw = handle.raw_syms().first().copied().unwrap_or(handle.modified_sym());
         match binding(state.mod_key, modifiers, handle.modified_sym(), raw) {
+            Some(Action::SwitchVt(vt)) => FilterResult::Intercept(Action::SwitchVt(vt)),
+            Some(_) if state.lock.is_some() => FilterResult::Forward,
             Some(action) => FilterResult::Intercept(action),
             None => FilterResult::Forward,
         }
@@ -203,7 +205,7 @@ fn pointer_button<B: InputBackend>(state: &mut Slate, event: B::PointerButtonEve
     let button = event.button_code();
     let button_state = event.state();
 
-    if button_state == ButtonState::Pressed && !pointer.is_grabbed() {
+    if button_state == ButtonState::Pressed && !pointer.is_grabbed() && state.lock.is_none() {
         let location = pointer.current_location();
         let window = state.space.element_under(location).map(|(window, _)| window.clone());
 
@@ -280,6 +282,9 @@ fn layer_with_keyboard_under(state: &Slate, location: Point<f64, Logical>) -> Op
 pub fn surface_under(state: &Slate, location: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
     let output = state.space.output_under(location).next()?;
     let output_location = state.space.output_geometry(output)?.loc;
+    if state.lock.is_some() {
+        return super::lock::surface_for(state, output).map(|surface| (surface, output_location.to_f64()));
+    }
     let map = layer_map_for_output(output);
     let relative = location - output_location.to_f64();
 

@@ -17,6 +17,7 @@ use smithay::xwayland::X11Surface;
 
 use super::focus::KeyFocus;
 use super::grabs;
+use super::scale;
 use super::state::Slate;
 
 #[derive(Default)]
@@ -68,6 +69,7 @@ fn place_window(state: &mut Slate, window: Window) {
         let _ = surface.configure(Rectangle::new(location, size));
     }
     state.space.map_element(window.clone(), location, false);
+    scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
 }
 
@@ -82,6 +84,9 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
 }
 
 pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) {
+    if state.lock.is_some() {
+        return;
+    }
     if let Some(window) = window {
         state.space.raise_element(window, true);
         if let (Some(surface), Some(xwm)) = (window.x11_surface(), state.xwm.as_mut()) {

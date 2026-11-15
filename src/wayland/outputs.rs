@@ -6,6 +6,7 @@ use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::{Logical, Point, Transform};
 
 use super::output_management;
+use super::scale;
 use super::screencopy;
 use super::state::Slate;
 use super::udev;
@@ -187,6 +188,7 @@ pub fn apply(state: &mut Slate, configs: Vec<HeadConfig>, test: bool) -> Result<
         layer_map_for_output(&record.output).arrange();
     }
     rescue_windows(state);
+    scale::update(state);
     output_management::refresh(state);
     Ok(())
 }
