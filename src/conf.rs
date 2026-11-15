@@ -111,8 +111,12 @@ pub fn read_text(layer: &mut Layer, text: &str, origin: &str, base: Option<&Path
             include(layer, value, &location, base, depth);
         } else if let Some(name) = key.strip_prefix('$') {
             layer.vars.insert(name.to_string(), value.to_string());
-        } else if key == "bind" || key == "rule" {
-            let list = if key == "bind" { "bindings" } else { "decoration-rules" };
+        } else if key == "bind" || key == "rule" || key == "float" {
+            let list = match key {
+                "bind" => "bindings",
+                "rule" => "decoration-rules",
+                _ => "floating-rules",
+            };
             layer.lists.entry(list.to_string()).or_default().push(value.to_string());
         } else if LIST_KEYS.contains(&key) {
             let entries = value.split(';').map(str::trim).filter(|entry| !entry.is_empty());

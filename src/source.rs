@@ -298,7 +298,7 @@ pub fn dump(resolved: &Resolved) -> String {
         };
         output.push_str(&format!("{key} = {value}  # {}\n", origin.name()));
     }
-    for (key, name) in [("bindings", "bind"), ("decoration-rules", "rule")] {
+    for (key, name) in [("bindings", "bind"), ("decoration-rules", "rule"), ("floating-rules", "float")] {
         for entry in resolved.values.lists.get(key).map(Vec::as_slice).unwrap_or_default() {
             output.push_str(&format!("{name} = {entry}\n"));
         }

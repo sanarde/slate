@@ -3,13 +3,19 @@
 use std::collections::HashMap;
 
 use crate::bindings::{self, Binding};
+use crate::layout::Layout;
 
 pub const PREFIX: &str = "/org/nuros/sanar/slate/";
-pub const LIST_KEYS: [&str; 2] = ["bindings", "decoration-rules"];
+pub const LIST_KEYS: [&str; 3] = ["bindings", "decoration-rules", "floating-rules"];
 
 pub const DEFAULTS: &[(&str, &str)] = &[
     ("theme", "material-you"),
     ("color-scheme", "auto"),
+    ("layout", "floating"),
+    ("tiling-gap", "8"),
+    ("tiling-outer-gap", "8"),
+    ("master-ratio", "55"),
+    ("master-count", "1"),
     ("mod-key", "auto"),
     ("terminal", ""),
     ("workspace-count", "9"),
@@ -161,6 +167,16 @@ pub enum ClickAction {
     Close,
 }
 
+#[derive(Clone, PartialEq)]
+pub struct Tiling {
+    pub layout: Layout,
+    pub gap: i32,
+    pub outer_gap: i32,
+    pub master_ratio: f32,
+    pub master_count: usize,
+    pub floating_rules: Vec<String>,
+}
+
 #[derive(Clone, Default, PartialEq)]
 pub struct Xkb {
     pub rules: String,
@@ -217,6 +233,7 @@ pub struct Settings {
     pub tap_to_click: bool,
     pub natural_scroll: bool,
     pub decoration: Decoration,
+    pub tiling: Tiling,
     pub bindings: Vec<Binding>,
 }
 
@@ -414,6 +431,24 @@ impl Settings {
             tap_to_click: boolean(values, "tap-to-click"),
             natural_scroll: boolean(values, "natural-scroll"),
             decoration: decoration_from(values),
+            tiling: Tiling {
+                layout: choice(
+                    values,
+                    "layout",
+                    &[
+                        ("floating", Layout::Floating),
+                        ("master-stack", Layout::MasterStack),
+                        ("spiral", Layout::Spiral),
+                        ("grid", Layout::Grid),
+                        ("monocle", Layout::Monocle),
+                    ],
+                ),
+                gap: int(values, "tiling-gap", 0, 64) as i32,
+                outer_gap: int(values, "tiling-outer-gap", 0, 128) as i32,
+                master_ratio: int(values, "master-ratio", 10, 90) as f32 / 100.0,
+                master_count: int(values, "master-count", 1, 8) as usize,
+                floating_rules: values.lists.get("floating-rules").cloned().unwrap_or_default(),
+            },
             bindings: bindings::parse(values.lists.get("bindings").map(Vec::as_slice).unwrap_or_default()),
         }
     }

@@ -265,3 +265,42 @@ summary = Action of a right click on the titlebar, Wayland only
 type = as
 default =
 summary = Key bindings as COMBO=ACTION that add to or replace the built in ones, for example Mod+b=exec firefox, and COMBO=none removes one
+
+[layout]
+type = s
+default = floating
+choices = floating; master-stack; spiral; grid; monocle
+summary = Initial layout of every workspace, floating leaves the windows where they are, the others tile them
+
+[tiling-gap]
+type = i
+default = 8
+min = 0
+max = 64
+summary = Space between tiled windows in pixels
+
+[tiling-outer-gap]
+type = i
+default = 8
+min = 0
+max = 128
+summary = Space between tiled windows and the edge of the screen in pixels
+
+[master-ratio]
+type = i
+default = 55
+min = 10
+max = 90
+summary = Share of the screen in percent that the master area or the first split of the spiral takes
+
+[master-count]
+type = i
+default = 1
+min = 1
+max = 8
+summary = Number of windows in the master area
+
+[floating-rules]
+type = as
+default =
+summary = Application ids whose windows float even in a tiling layout
