@@ -57,7 +57,7 @@ struct Key {
 
 struct Cache {
     key: Key,
-    titlebar: MemoryRenderBuffer,
+    titlebar: Option<MemoryRenderBuffer>,
     borders: Vec<(Rectangle<i32, Logical>, SolidColorBuffer)>,
     titlebar_rect: Rectangle<i32, Logical>,
     content_loc: Point<i32, Logical>,
@@ -230,6 +230,9 @@ pub fn hit(state: &Slate, location: Point<f64, Logical>) -> Option<(Window, Hit)
             }
         }
 
+        if settings.decoration.titlebar_height == 0 {
+            continue;
+        }
         let titlebar = titlebar_of(state, content);
         let buttons = titlebar::layout(&settings.decoration, titlebar.size.w, titlebar.size.h);
         for (kind, rect) in buttons {
@@ -369,7 +372,8 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
     let height = ((rect.size.h as f64 * scale).round() as usize).max(1);
     let radius = if key.maximized { 0.0 } else { decoration.corner_radius as f32 * scale as f32 };
 
-    let pixels = titlebar::render(&Params {
+    let titlebar = (titlebar_height > 0).then(|| {
+        let pixels = titlebar::render(&Params {
         width,
         height,
         frame_left: (insets.left as f64 * scale) as f32,
@@ -384,20 +388,30 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
         maximized: key.maximized,
         title: &key.title,
         hover,
+        });
+        MemoryRenderBuffer::from_slice(
+            &pixels,
+            Fourcc::Argb8888,
+            (width as i32, height as i32),
+            1,
+            Transform::Normal,
+            None,
+        )
     });
-    let titlebar = MemoryRenderBuffer::from_slice(
-        &pixels,
-        Fourcc::Argb8888,
-        (width as i32, height as i32),
-        1,
-        Transform::Normal,
-        None,
-    );
 
     let mut borders = Vec::new();
     if insets.left > 0 {
         let color = border_color(state, key.focused);
+        let top = if titlebar_height == 0 {
+            Rectangle::new(
+                (content.loc.x - insets.left, content.loc.y - insets.top).into(),
+                (content.size.w + insets.left + insets.right, insets.top).into(),
+            )
+        } else {
+            Rectangle::default()
+        };
         let parts = [
+            top,
             Rectangle::new(
                 (content.loc.x - insets.left, content.loc.y).into(),
                 (insets.left, content.size.h).into(),
@@ -476,19 +490,21 @@ pub fn elements(
 
     let mut elements = Vec::new();
     let shift = content.loc - cache.content_loc;
-    let buffer_rect = Rectangle::new(cache.titlebar_rect.loc + shift, cache.titlebar_rect.size);
-    let location = (buffer_rect.loc - origin).to_f64().to_physical(scale);
-    match MemoryRenderBufferRenderElement::from_buffer(
-        renderer,
-        location,
-        &cache.titlebar,
-        None,
-        None,
-        Some(buffer_rect.size),
-        Kind::Unspecified,
-    ) {
-        Ok(element) => elements.push(OutputElement::Memory(element)),
-        Err(error) => tracing::error!(%error, "failed to upload the titlebar"),
+    if let Some(titlebar) = &cache.titlebar {
+        let buffer_rect = Rectangle::new(cache.titlebar_rect.loc + shift, cache.titlebar_rect.size);
+        let location = (buffer_rect.loc - origin).to_f64().to_physical(scale);
+        match MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location,
+            titlebar,
+            None,
+            None,
+            Some(buffer_rect.size),
+            Kind::Unspecified,
+        ) {
+            Ok(element) => elements.push(OutputElement::Memory(element)),
+            Err(error) => tracing::error!(%error, "failed to upload the titlebar"),
+        }
     }
 
     for (rect, buffer) in &cache.borders {
