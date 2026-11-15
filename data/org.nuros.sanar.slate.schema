@@ -125,141 +125,141 @@ type = i
 default = 30
 min = 0
 max = 96
-summary = Height of the titlebar in pixels, 0 leaves only the border, Wayland only
+summary = Height of the titlebar in pixels, 0 leaves only the border
 
 [titlebar-color-focused]
 type = s
 default = #6750a4
-summary = Titlebar color of the focused window as #rrggbb or #rrggbbaa, Wayland only
+summary = Titlebar color of the focused window as #rrggbb or #rrggbbaa
 
 [titlebar-color-unfocused]
 type = s
 default = #49454f
-summary = Titlebar color of the other windows as #rrggbb or #rrggbbaa, Wayland only
+summary = Titlebar color of the other windows as #rrggbb or #rrggbbaa
 
 [title-color-focused]
 type = s
 default = #ffffff
-summary = Title text color of the focused window, Wayland only
+summary = Title text color of the focused window
 
 [title-color-unfocused]
 type = s
 default = #cac4d0
-summary = Title text color of the other windows, Wayland only
+summary = Title text color of the other windows
 
 [title-font]
 type = s
 default = sans-serif
-summary = Comma separated fontconfig patterns or font file paths, later ones are used for missing glyphs, Wayland only
+summary = Comma separated fontconfig patterns or font file paths, later ones are used for missing glyphs
 
 [title-font-size]
 type = i
 default = 13
 min = 6
 max = 64
-summary = Title font size in pixels, Wayland only
+summary = Title font size in pixels
 
 [title-align]
 type = s
 default = center
 choices = left; center; right
-summary = Alignment of the title between the buttons, Wayland only
+summary = Alignment of the title between the buttons
 
 [title-padding]
 type = i
 default = 12
 min = 0
 max = 128
-summary = Space between the title and the buttons or the titlebar edge in pixels, Wayland only
+summary = Space between the title and the buttons or the titlebar edge in pixels
 
 [corner-radius]
 type = i
 default = 8
 min = 0
 max = 32
-summary = Radius of the upper corners of the titlebar in pixels, Wayland only
+summary = Radius of the upper corners of the titlebar in pixels
 
 [resize-margin]
 type = i
 default = 4
 min = 0
 max = 32
-summary = Width of the invisible area outside the frame that resizes the window in pixels, Wayland only
+summary = Width of the invisible area outside the frame that resizes the window in pixels
 
 [button-layout]
 type = s
 default = :minimize,maximize,close
-summary = Titlebar buttons as LEFT:RIGHT lists of close, maximize and minimize, for example close:minimize,maximize, Wayland only
+summary = Titlebar buttons as LEFT:RIGHT lists of close, maximize and minimize, for example close:minimize,maximize
 
 [button-size]
 type = i
 default = 18
 min = 8
 max = 64
-summary = Size of a titlebar button in pixels, Wayland only
+summary = Size of a titlebar button in pixels
 
 [button-spacing]
 type = i
 default = 6
 min = 0
 max = 32
-summary = Space between titlebar buttons in pixels, Wayland only
+summary = Space between titlebar buttons in pixels
 
 [button-margin]
 type = i
 default = 8
 min = 0
 max = 64
-summary = Space between the titlebar edge and the buttons in pixels, Wayland only
+summary = Space between the titlebar edge and the buttons in pixels
 
 [button-shape]
 type = s
 default = circle
 choices = circle; rounded; square
-summary = Shape of the button background, Wayland only
+summary = Shape of the button background
 
 [button-color]
 type = s
 default = #00000000
-summary = Button background color, Wayland only
+summary = Button background color
 
 [button-hover-color]
 type = s
 default = #ffffff33
-summary = Button background color under the pointer, Wayland only
+summary = Button background color under the pointer
 
 [button-close-hover-color]
 type = s
 default = #e5484d
-summary = Background color of the close button under the pointer, Wayland only
+summary = Background color of the close button under the pointer
 
 [button-icon-color-focused]
 type = s
 default = #ffffff
-summary = Button icon color in the focused window, Wayland only
+summary = Button icon color in the focused window
 
 [button-icon-color-unfocused]
 type = s
 default = #cac4d0
-summary = Button icon color in the other windows, Wayland only
+summary = Button icon color in the other windows
 
 [titlebar-double-click]
 type = s
 default = maximize
 choices = none; maximize; minimize; fullscreen; close
-summary = Action of a double click on the titlebar, Wayland only
+summary = Action of a double click on the titlebar
 
 [titlebar-middle-click]
 type = s
 default = none
 choices = none; maximize; minimize; fullscreen; close
-summary = Action of a middle click on the titlebar, Wayland only
+summary = Action of a middle click on the titlebar
 
 [titlebar-right-click]
 type = s
 default = none
 choices = none; maximize; minimize; fullscreen; close
-summary = Action of a right click on the titlebar, Wayland only
+summary = Action of a right click on the titlebar
 
 [bindings]
 type = as

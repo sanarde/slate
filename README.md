@@ -206,7 +206,7 @@ Entries that cannot be parsed are logged and ignored.
 
 ### Window decorations
 
-The Wayland backend draws titlebars and borders itself for windows that ask for server side decorations through xdg-decoration and for X11 windows of XWayland. Applications that draw their own titlebar are left alone. All keys below apply to the Wayland backend and take effect at once. Colors are `#rrggbb` or `#rrggbbaa`.
+Both backends draw titlebars and borders themselves. On Wayland this is done for windows that ask for server side decorations through xdg-decoration and for X11 windows of XWayland, and applications that draw their own titlebar are left alone. The X11 backend puts every window except docks, popups and windows that ask for no decorations (Motif hints) into a frame window. All keys below take effect at once on both backends. Colors are `#rrggbb` or `#rrggbbaa`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -228,7 +228,7 @@ The Wayland backend draws titlebars and borders itself for windows that ask for 
 | `button-icon-color-focused`, `button-icon-color-unfocused` | `#ffffff`, `#cac4d0` | Icon colors. |
 | `titlebar-double-click`, `titlebar-middle-click`, `titlebar-right-click` | `maximize`, `none`, `none` | `none`, `maximize`, `minimize`, `fullscreen` or `close`. |
 
-Dragging the titlebar moves a window and dragging the frame or the margin resizes it. A minimized window is hidden until it is restored with the `restore` binding, by a request of the application or, on X11, by a pager that activates it. Slate has no taskbar of its own.
+Dragging the titlebar moves a window and dragging the frame or the margin resizes it. In the X11 backend the grab area is the border and the top rows of the titlebar, because a frame window cannot extend beyond its borders, and the rounded corners use the Shape extension, so they have no antialiasing. A minimized window is hidden until it is restored with the `restore` binding, by a request of the application or, on X11, by a pager that activates it. Slate has no taskbar of its own.
 
 ```
 rule = foot=none
@@ -238,7 +238,7 @@ button-layout = close:maximize
 
 ## Roadmap
 
-- Decorations in the X11 backend, window shadows and animations.
+- Window shadows and animations.
 - Text input and ext-image-copy-capture.
 
 ## Acknowledgments
