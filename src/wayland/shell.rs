@@ -1,0 +1,346 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+use std::cell::RefCell;
+
+use smithay::desktop::{
+    PopupKind, Window, WindowSurfaceType, find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output,
+};
+use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State as ToplevelState;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
+use smithay::wayland::compositor::{get_parent, with_states};
+use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::shell::wlr_layer::LayerSurfaceData;
+use smithay::wayland::shell::xdg::PopupSurface;
+use smithay::xwayland::X11Surface;
+
+use super::focus::KeyFocus;
+use super::grabs;
+use super::state::Slate;
+
+#[derive(Default)]
+struct WindowState {
+    restore: Option<Rectangle<i32, Logical>>,
+    maximized: bool,
+    fullscreen: bool,
+}
+
+pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> {
+    state
+        .space
+        .elements()
+        .chain(state.pending_windows.iter())
+        .find(|window| window.toplevel().is_some_and(|toplevel| toplevel.wl_surface() == surface))
+        .cloned()
+}
+
+pub fn window_for_x11(state: &Slate, surface: &X11Surface) -> Option<Window> {
+    state
+        .space
+        .elements()
+        .find(|window| window.x11_surface() == Some(surface))
+        .cloned()
+}
+
+pub fn map_window(state: &mut Slate, window: Window) {
+    if window.is_wayland() {
+        state.pending_windows.push(window);
+        return;
+    }
+    place_window(state, window);
+}
+
+fn place_window(state: &mut Slate, window: Window) {
+    let size = window.geometry().size;
+    let zone = active_zone(state);
+    let location = Point::from((
+        zone.loc.x + ((zone.size.w - size.w) / 2).max(0),
+        zone.loc.y + ((zone.size.h - size.h) / 2).max(0),
+    ));
+
+    if let Some(surface) = window.x11_surface() {
+        let _ = surface.configure(Rectangle::new(location, size));
+    }
+    state.space.map_element(window.clone(), location, false);
+    focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+}
+
+pub fn unmap_window(state: &mut Slate, window: &Window) {
+    state.pending_windows.retain(|pending| pending != window);
+    state.space.unmap_elem(window);
+    grabs::forget_window(state, window);
+
+    let top = state.space.elements().next_back().cloned();
+    focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+}
+
+pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) {
+    if let Some(window) = window {
+        state.space.raise_element(window, true);
+        if let (Some(surface), Some(xwm)) = (window.x11_surface(), state.xwm.as_mut()) {
+            let _ = xwm.raise_window(surface);
+        }
+    }
+
+    for element in state.space.elements() {
+        element.set_activated(Some(element) == window);
+        if let Some(toplevel) = element.toplevel() {
+            toplevel.send_pending_configure();
+        }
+    }
+
+    let focus = window.and_then(KeyFocus::from_window);
+    let keyboard = state.seat.get_keyboard().unwrap();
+    keyboard.set_focus(state, focus, serial);
+}
+
+pub fn focused_window(state: &Slate) -> Option<Window> {
+    let focus = state.seat.get_keyboard()?.current_focus()?;
+    state
+        .space
+        .elements()
+        .find(|window| KeyFocus::from_window(window).as_ref() == Some(&focus))
+        .cloned()
+}
+
+pub fn close_window(window: &Window) {
+    if let Some(toplevel) = window.toplevel() {
+        toplevel.send_close();
+    } else if let Some(surface) = window.x11_surface() {
+        let _ = surface.close();
+    }
+}
+
+pub fn toggle_maximized(state: &mut Slate, window: &Window) {
+    let maximized = with_window_state(window, |window_state| window_state.maximized);
+    set_maximized(state, window, !maximized);
+}
+
+pub fn toggle_fullscreen(state: &mut Slate, window: &Window) {
+    let fullscreen = with_window_state(window, |window_state| window_state.fullscreen);
+    set_fullscreen(state, window, !fullscreen);
+}
+
+pub fn set_maximized(state: &mut Slate, window: &Window, maximized: bool) {
+    let target = output_for_window(state, window).map(|output| layer_map_for_output(&output).non_exclusive_zone());
+    let Some(mut target) = target else {
+        return;
+    };
+    if let Some(output) = output_for_window(state, window) {
+        target.loc += state.space.output_geometry(&output).unwrap().loc;
+    }
+
+    let applied = with_window_state(window, |window_state| {
+        if window_state.maximized == maximized || window_state.fullscreen {
+            return false;
+        }
+        window_state.maximized = maximized;
+        true
+    });
+    if !applied {
+        send_current_state(window);
+        return;
+    }
+
+    if let Some(surface) = window.x11_surface() {
+        let _ = surface.set_maximized(maximized);
+    }
+    resize_to_state(state, window, ToplevelState::Maximized, maximized, target);
+}
+
+pub fn set_fullscreen(state: &mut Slate, window: &Window, fullscreen: bool) {
+    let Some(output) = output_for_window(state, window) else {
+        return;
+    };
+    let target = state.space.output_geometry(&output).unwrap();
+
+    let applied = with_window_state(window, |window_state| {
+        if window_state.fullscreen == fullscreen || window_state.maximized {
+            return false;
+        }
+        window_state.fullscreen = fullscreen;
+        true
+    });
+    if !applied {
+        send_current_state(window);
+        return;
+    }
+
+    if let Some(surface) = window.x11_surface() {
+        let _ = surface.set_fullscreen(fullscreen);
+    }
+    resize_to_state(state, window, ToplevelState::Fullscreen, fullscreen, target);
+}
+
+fn resize_to_state(
+    state: &mut Slate,
+    window: &Window,
+    toplevel_state: ToplevelState,
+    enabled: bool,
+    target: Rectangle<i32, Logical>,
+) {
+    let current = state.space.element_geometry(window);
+    let geometry = if enabled {
+        with_window_state(window, |window_state| window_state.restore = current);
+        target
+    } else {
+        let restore = with_window_state(window, |window_state| window_state.restore.take());
+        restore.or(current).unwrap_or(target)
+    };
+
+    if let Some(toplevel) = window.toplevel() {
+        toplevel.with_pending_state(|pending| {
+            if enabled {
+                pending.states.set(toplevel_state);
+                pending.size = Some(geometry.size);
+            } else {
+                pending.states.unset(toplevel_state);
+                pending.size = Some(geometry.size);
+            }
+        });
+        toplevel.send_pending_configure();
+    } else if let Some(surface) = window.x11_surface() {
+        let _ = surface.configure(geometry);
+    }
+
+    state.space.map_element(window.clone(), geometry.loc, true);
+}
+
+fn send_current_state(window: &Window) {
+    if let Some(toplevel) = window.toplevel() {
+        toplevel.send_configure();
+    }
+}
+
+fn with_window_state<T>(window: &Window, f: impl FnOnce(&mut WindowState) -> T) -> T {
+    window.user_data().insert_if_missing(|| RefCell::new(WindowState::default()));
+    let mut window_state = window.user_data().get::<RefCell<WindowState>>().unwrap().borrow_mut();
+    f(&mut window_state)
+}
+
+fn output_for_window(state: &Slate, window: &Window) -> Option<Output> {
+    state
+        .space
+        .outputs_for_element(window)
+        .into_iter()
+        .next()
+        .or_else(|| state.space.outputs().next().cloned())
+}
+
+fn active_zone(state: &Slate) -> Rectangle<i32, Logical> {
+    let pointer = state.seat.get_pointer().unwrap().current_location();
+    let output = state
+        .space
+        .output_under(pointer)
+        .next()
+        .or_else(|| state.space.outputs().next())
+        .cloned();
+    let Some(output) = output else {
+        return Rectangle::default();
+    };
+
+    let mut zone = layer_map_for_output(&output).non_exclusive_zone();
+    zone.loc += state.space.output_geometry(&output).unwrap().loc;
+    zone
+}
+
+pub fn unconstrain_popup(state: &Slate, popup: &PopupSurface) {
+    let kind = PopupKind::Xdg(popup.clone());
+    let Ok(root) = find_popup_root_surface(&kind) else {
+        return;
+    };
+    let Some(window) = window_for_surface(state, &root) else {
+        return;
+    };
+    let Some(window_geometry) = state.space.element_geometry(&window) else {
+        return;
+    };
+    let Some(output) = output_for_window(state, &window) else {
+        return;
+    };
+
+    let mut target = state.space.output_geometry(&output).unwrap();
+    target.loc -= get_popup_toplevel_coords(&kind);
+    target.loc -= window_geometry.loc;
+
+    popup.with_pending_state(|pending| {
+        pending.geometry = pending.positioner.get_unconstrained_geometry(target);
+    });
+}
+
+pub fn handle_commit(state: &mut Slate, surface: &WlSurface) {
+    let mut root = surface.clone();
+    while let Some(parent) = get_parent(&root) {
+        root = parent;
+    }
+
+    if let Some(index) = state
+        .pending_windows
+        .iter()
+        .position(|window| window.toplevel().is_some_and(|toplevel| toplevel.wl_surface() == &root))
+    {
+        let window = state.pending_windows[index].clone();
+        window.on_commit();
+        let toplevel = window.toplevel().unwrap();
+        if !toplevel.is_initial_configure_sent() {
+            toplevel.send_configure();
+        } else if !window.geometry().size.is_empty() {
+            state.pending_windows.remove(index);
+            place_window(state, window);
+        }
+        return;
+    }
+
+    let mapped = state
+        .space
+        .elements()
+        .find(|window| window.wl_surface().as_deref() == Some(&root))
+        .cloned();
+    if let Some(window) = mapped {
+        window.on_commit();
+        grabs::handle_resize_commit(state, &window);
+    }
+
+    state.popups.commit(surface);
+    if let Some(PopupKind::Xdg(popup)) = state.popups.find_popup(surface)
+        && !popup.is_initial_configure_sent()
+    {
+        let _ = popup.send_configure();
+    }
+
+    handle_layer_commit(state, surface);
+}
+
+fn handle_layer_commit(state: &mut Slate, surface: &WlSurface) {
+    let output = state
+        .space
+        .outputs()
+        .find(|output| {
+            layer_map_for_output(output)
+                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .is_some()
+        })
+        .cloned();
+    let Some(output) = output else {
+        return;
+    };
+
+    let mut map = layer_map_for_output(&output);
+    map.arrange();
+    let layer = map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL).cloned().unwrap();
+    drop(map);
+
+    let initial_configure_sent = with_states(surface, |states| {
+        states
+            .data_map
+            .get::<LayerSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .initial_configure_sent
+    });
+    if !initial_configure_sent {
+        layer.layer_surface().send_configure();
+    }
+}
