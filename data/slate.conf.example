@@ -1,0 +1,101 @@
+# Slate configuration. Copy this file to ~/.config/slate/slate.conf.
+#
+# Syntax
+#   key = value          a setting
+#   $name = value        a variable, used as key = $name
+#   key = @role          a color role of the Material You scheme, @role/12 sets the alpha to 12 percent
+#   bind = COMBO=ACTION  a key binding, repeat the line for more
+#   rule = APP_ID=MODE   a decoration rule, repeat the line for more
+#   include = PATH       another file, theme:NAME includes a theme
+# A line that starts with # is a comment, so is the text after a space and a # in a line.
+# Colors are #rrggbb or #rrggbbaa. Changes to this file and to the files it includes apply at once.
+#
+# Order of precedence, from the lowest: the built in defaults, cfgd settings of SanarDE,
+# the theme, this file. Run slate --dump-config to see where each value comes from and
+# slate --check to find mistakes. slate --list-themes lists the themes.
+
+# Look ------------------------------------------------------------------------------------------
+
+# material-you follows the Seurat color scheme of SanarDE and uses a built in palette without it.
+# Others: minimal, nord, gruvbox-dark, catppuccin-mocha, dracula, tokyo-night, light, none,
+# or the name of a file in ~/.config/slate/themes.
+theme = material-you
+
+# Variant of the built in palette when Seurat is not running: auto, light or dark.
+#color-scheme = dark
+
+# Presets define variables such as $accent, defining one here recolors the whole preset.
+#$accent = #ff8800
+
+#border-width = 2
+#border-color-focused = @primary
+#border-color-unfocused = @outline_variant
+
+# Window decorations (Wayland) ------------------------------------------------------------------
+
+# server asks applications for server side decorations, client for client side ones,
+# auto follows the application.
+#decoration-mode = server
+
+# none removes the frame of an application completely, client leaves it to the application.
+#rule = foot=none
+#rule = firefox=client
+
+# 0 leaves only the border.
+#titlebar-height = 30
+#titlebar-color-focused = @primary_container
+#titlebar-color-unfocused = @surface_container_high
+#title-color-focused = @on_primary_container
+#title-color-unfocused = @on_surface_variant
+#title-font = Roboto Flex, sans-serif
+#title-font-size = 13
+#title-align = center
+#title-padding = 12
+#corner-radius = 8
+#resize-margin = 4
+
+# LEFT:RIGHT lists of close and maximize.
+#button-layout = :maximize,close
+#button-size = 18
+#button-spacing = 6
+#button-margin = 8
+#button-shape = circle
+#button-color = #00000000
+#button-hover-color = @on_surface/12
+#button-close-hover-color = @error
+#button-icon-color-focused = @on_primary_container
+#button-icon-color-unfocused = @on_surface_variant
+
+# none, maximize, fullscreen or close.
+#titlebar-double-click = maximize
+#titlebar-middle-click = none
+#titlebar-right-click = none
+
+# Behavior --------------------------------------------------------------------------------------
+
+# auto is Super, or Alt in a nested window.
+#mod-key = super
+#terminal = alacritty
+#workspace-count = 9
+
+# Input (Wayland) -------------------------------------------------------------------------------
+
+#xkb-layout = us,ru
+#xkb-options = grp:alt_shift_toggle
+#repeat-delay = 200
+#repeat-rate = 25
+#cursor-theme = Adwaita
+#cursor-size = 24
+#tap-to-click = true
+#natural-scroll = false
+
+# Key bindings ----------------------------------------------------------------------------------
+
+# These add to the built in bindings or replace the ones with the same combination.
+# Actions: terminal, close, maximize, fullscreen, quit, focus-next, focus-prev, workspace N,
+# move-to-workspace N, exec COMMAND, none (removes a binding).
+#bind = Mod+d=exec rofi -show drun
+#bind = Mod+b=exec firefox
+#bind = Mod+Return=exec foot -e fish
+#bind = Mod+q=none
+#bind = XF86AudioRaiseVolume=exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
