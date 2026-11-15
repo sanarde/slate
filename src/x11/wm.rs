@@ -17,13 +17,16 @@ use x11rb::{CURRENT_TIME, NONE};
 use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
+mod tiling;
 use crate::bindings::{Action, Binding};
+use crate::layout::WorkspaceLayout;
 use crate::config::{ModKeySetting, Settings};
 use crate::source::ConfigSource;
 use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
 const ICONIC_STATE: u32 = 3;
+const WORKSPACE_LIMIT: usize = 9;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -59,6 +62,9 @@ struct Client {
     workspace: usize,
     hidden: bool,
     minimized: bool,
+    floating: bool,
+    tiled: bool,
+    float_rect: Option<Rect>,
     pending_unmaps: u32,
     accepts_input: bool,
     above: bool,
@@ -92,6 +98,8 @@ pub struct Wm {
     drag: Option<Drag>,
     focused: Option<Window>,
     minimize_order: Vec<Window>,
+    tile_order: Vec<Window>,
+    workspace_layouts: Vec<WorkspaceLayout>,
     workspace: usize,
     settings: Settings,
     config: ConfigSource,
@@ -127,6 +135,8 @@ impl Wm {
             drag: None,
             focused: None,
             minimize_order: Vec::new(),
+            tile_order: Vec::new(),
+            workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); WORKSPACE_LIMIT],
             workspace: 0,
             mod_mask: mod_mask_of(settings.mod_key),
             settings,
@@ -206,12 +216,16 @@ impl Wm {
             self.bindings.clear();
             self.grab_keys()?;
         }
+        if old.tiling != self.settings.tiling {
+            self.reset_layouts();
+        }
         if old.border_width != self.settings.border_width {
             let windows: Vec<Window> = self.clients.iter().map(|client| client.window).collect();
             for window in windows {
                 self.apply_state(window)?;
             }
         }
+        self.arrange()?;
         self.update_borders()
     }
 
@@ -449,7 +463,7 @@ impl Wm {
         for window in refit {
             self.apply_state(window)?;
         }
-        Ok(())
+        self.arrange()
     }
 
     fn monitor_index(&self, rect: &Rect) -> usize {
@@ -647,6 +661,9 @@ impl Wm {
             workspace: self.workspace,
             hidden: false,
             minimized: false,
+            floating: false,
+            tiled: false,
+            float_rect: None,
             pending_unmaps: 0,
             accepts_input,
             above: initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
@@ -660,6 +677,7 @@ impl Wm {
         )?;
         self.conn.map_window(window)?;
         self.update_client_list()?;
+        self.register_tiled(window);
         self.focus(window)?;
 
         let fullscreen = initial_state.contains(&self.atoms._NET_WM_STATE_FULLSCREEN);
@@ -668,6 +686,7 @@ impl Wm {
         if fullscreen || maximized {
             self.set_state(window, Some(maximized), Some(fullscreen))?;
         }
+        self.arrange()?;
         self.restack()
     }
 
@@ -705,6 +724,7 @@ impl Wm {
             AtomEnum::CARDINAL,
             &[target as u32],
         )?;
+        self.arrange()?;
 
         self.focused = None;
         let top = self.focus_candidate(target);
@@ -740,6 +760,7 @@ impl Wm {
         client.pending_unmaps += 1;
         self.conn.unmap_window(window)?;
 
+        self.arrange()?;
         let current = self.workspace;
         let top = self.focus_candidate(current);
         match top {
@@ -762,6 +783,7 @@ impl Wm {
             return Ok(());
         };
         self.clients.remove(index);
+        self.forget_tiled(window);
         if self.drag.as_ref().is_some_and(|drag| drag.window == window) {
             self.drag = None;
         }
@@ -778,7 +800,7 @@ impl Wm {
                 }
             }
         }
-        Ok(())
+        self.arrange()
     }
 
     fn update_client_list(&self) -> Result<()> {
@@ -853,6 +875,7 @@ impl Wm {
         }
         self.minimize_order.push(window);
         self.apply_state(window)?;
+        self.arrange()?;
 
         if self.focused == Some(window) {
             self.focused = None;
@@ -889,6 +912,7 @@ impl Wm {
             self.conn.map_window(window)?;
         }
         self.apply_state(window)?;
+        self.arrange()?;
         self.focus(window)
     }
 
@@ -966,7 +990,8 @@ impl Wm {
         if was_normal && !is_normal {
             client.restore = Some(client.rect);
         }
-        self.apply_state(window)
+        self.apply_state(window)?;
+        self.arrange()
     }
 
     fn apply_state(&mut self, window: Window) -> Result<()> {
@@ -1051,7 +1076,7 @@ impl Wm {
         };
 
         let client = &mut self.clients[index];
-        if client.maximized || client.fullscreen {
+        if client.maximized || client.fullscreen || client.tiled {
             return Ok(());
         }
         if event.value_mask.contains(ConfigWindow::X) {
@@ -1212,6 +1237,32 @@ impl Wm {
                     self.move_to_workspace(window, index)?;
                 }
             }
+            Action::ToggleTiling => self.toggle_tiling()?,
+            Action::LayoutNext => self.layout_next()?,
+            Action::ToggleFloating => {
+                if let Some(window) = focused {
+                    self.toggle_floating(window)?;
+                }
+            }
+            Action::MasterGrow => self.master_ratio(true)?,
+            Action::MasterShrink => self.master_ratio(false)?,
+            Action::MasterMore => self.master_count(true)?,
+            Action::MasterFewer => self.master_count(false)?,
+            Action::Promote => {
+                if let Some(window) = focused {
+                    self.promote(window)?;
+                }
+            }
+            Action::SwapNext => {
+                if let Some(window) = focused {
+                    self.swap_neighbor(window, true)?;
+                }
+            }
+            Action::SwapPrevious => {
+                if let Some(window) = focused {
+                    self.swap_neighbor(window, false)?;
+                }
+            }
             Action::FocusNext => self.cycle_focus(true)?,
             Action::FocusPrevious => self.cycle_focus(false)?,
         }
@@ -1226,9 +1277,18 @@ impl Wm {
         };
 
         let mod_down = u16::from(event.state) & self.mod_mask != 0;
-        let draggable = !client.maximized && !client.fullscreen;
-        let initial = client.rect;
+        let tiled = client.tiled;
+        let draggable = !client.maximized && !client.fullscreen && !(tiled && event.detail == BUTTON_RIGHT);
         self.focus(window)?;
+        if tiled && mod_down && event.detail == BUTTON_LEFT {
+            self.make_floating(window)?;
+        }
+        let initial = self
+            .clients
+            .iter()
+            .find(|client| client.window == window)
+            .map(|client| client.rect)
+            .unwrap_or_default();
 
         if !mod_down || !draggable || (event.detail != BUTTON_LEFT && event.detail != BUTTON_RIGHT) {
             let mode = if mod_down { Allow::ASYNC_POINTER } else { Allow::REPLAY_POINTER };
