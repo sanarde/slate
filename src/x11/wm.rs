@@ -2,6 +2,8 @@
 
 use std::error::Error;
 
+use rustix::event::{PollFd, PollFlags, poll};
+use rustix::io::Errno;
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::*;
@@ -13,15 +15,20 @@ use x11rb::{CURRENT_TIME, NONE};
 use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
+use crate::cfgd::Cfgd;
+use crate::config::{ModKeySetting, PREFIX, Settings};
 use crate::spawn;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const WORKSPACE_COUNT: usize = 9;
+fn mod_mask_of(setting: ModKeySetting) -> u16 {
+    match setting {
+        ModKeySetting::Alt => u16::from(ModMask::M1),
+        ModKeySetting::Auto | ModKeySetting::Super => u16::from(ModMask::M4),
+    }
+}
+
 const KEYSYM_1: u32 = 0x31;
-const BORDER: u32 = 2;
-const BORDER_FOCUSED: u32 = 0x6750a4;
-const BORDER_UNFOCUSED: u32 = 0x49454f;
 const MIN_SIZE: u32 = 32;
 const LEFT_PTR_GLYPH: u16 = 68;
 const LOCK_VARIANTS: [u16; 4] = [0, 2, 16, 18];
@@ -87,11 +94,14 @@ pub struct Wm {
     drag: Option<Drag>,
     focused: Option<Window>,
     workspace: usize,
+    settings: Settings,
+    cfgd: Option<Cfgd>,
+    mod_mask: u16,
     running: bool,
 }
 
 impl Wm {
-    pub fn new(conn: RustConnection, screen_num: usize) -> Result<Wm> {
+    pub fn new(conn: RustConnection, screen_num: usize, settings: Settings, cfgd: Option<Cfgd>) -> Result<Wm> {
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
         let screen_rect = Rect::new(0, 0, screen.width_in_pixels as u32, screen.height_in_pixels as u32);
@@ -118,6 +128,9 @@ impl Wm {
             drag: None,
             focused: None,
             workspace: 0,
+            mod_mask: mod_mask_of(settings.mod_key),
+            settings,
+            cfgd,
             running: true,
         };
 
@@ -133,16 +146,106 @@ impl Wm {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        let notify = self.cfgd.as_ref().and_then(|cfgd| cfgd.notify_fd());
+        if let Some(cfgd) = self.cfgd.as_mut()
+            && !cfgd.subscribe(PREFIX)
+        {
+            tracing::warn!("failed to subscribe to cfgd changes");
+        }
+
         while self.running {
-            let event = self.conn.wait_for_event()?;
-            let mut next = Some(event);
-            while let Some(event) = next {
+            while let Some(event) = self.conn.poll_for_event()? {
                 if let Err(error) = self.dispatch(event) {
                     tracing::debug!(%error, "event handling failed");
                 }
-                next = self.conn.poll_for_event()?;
             }
             self.conn.flush()?;
+            if !self.running {
+                break;
+            }
+
+            let mut fds = vec![PollFd::new(self.conn.stream(), PollFlags::IN)];
+            if let Some(notify) = &notify {
+                fds.push(PollFd::new(notify, PollFlags::IN));
+            }
+            match poll(&mut fds, None) {
+                Ok(_) | Err(Errno::INTR) => {}
+                Err(error) => return Err(error.into()),
+            }
+            if notify.is_some() && fds[1].revents().contains(PollFlags::IN) {
+                self.reload_settings()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn reload_settings(&mut self) -> Result<()> {
+        let Some(mut cfgd) = self.cfgd.take() else {
+            return Ok(());
+        };
+        let settings = cfgd.dispatch().then(|| Settings::load(&mut cfgd));
+        self.cfgd = Some(cfgd);
+
+        match settings {
+            Some(settings) => self.apply_settings(settings),
+            None => Ok(()),
+        }
+    }
+
+    fn apply_settings(&mut self, new: Settings) -> Result<()> {
+        let old = std::mem::replace(&mut self.settings, new);
+        tracing::info!("settings reloaded");
+        let mod_mask = mod_mask_of(self.settings.mod_key);
+        let workspaces_changed = old.workspace_count != self.settings.workspace_count;
+
+        if workspaces_changed {
+            self.clamp_workspaces()?;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.root,
+                self.atoms._NET_NUMBER_OF_DESKTOPS,
+                AtomEnum::CARDINAL,
+                &[self.settings.workspace_count as u32],
+            )?;
+        }
+        if mod_mask != self.mod_mask || workspaces_changed {
+            self.mod_mask = mod_mask;
+            self.conn.ungrab_key(0u8, self.root, ModMask::ANY)?;
+            self.bindings.clear();
+            self.grab_keys()?;
+        }
+        if old.border_width != self.settings.border_width {
+            let windows: Vec<Window> = self.clients.iter().map(|client| client.window).collect();
+            for window in windows {
+                self.apply_state(window)?;
+            }
+        }
+        self.update_borders()
+    }
+
+    fn clamp_workspaces(&mut self) -> Result<()> {
+        let last = self.settings.workspace_count.saturating_sub(1);
+        if self.workspace > last {
+            self.switch_workspace(last)?;
+        }
+
+        for index in 0..self.clients.len() {
+            if self.clients[index].workspace <= last {
+                continue;
+            }
+            let window = self.clients[index].window;
+            self.clients[index].workspace = last;
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                self.atoms._NET_WM_DESKTOP,
+                AtomEnum::CARDINAL,
+                &[last as u32],
+            )?;
+            if last == self.workspace && self.clients[index].hidden {
+                self.clients[index].hidden = false;
+                self.conn.map_window(window)?;
+            }
         }
         Ok(())
     }
@@ -216,7 +319,7 @@ impl Wm {
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_SUPPORTED, AtomEnum::ATOM, &supported)?;
         self.conn
-            .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[WORKSPACE_COUNT as u32])?;
+            .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[self.settings.workspace_count as u32])?;
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[0])?;
         self.conn.change_property32(
@@ -238,7 +341,7 @@ impl Wm {
             (keys::KEYSYM_E, Action::Quit),
         ];
 
-        let digits = (0..WORKSPACE_COUNT).map(|index| (KEYSYM_1 + index as u32, Action::Workspace(index)));
+        let digits = (0..self.settings.workspace_count).map(|index| (KEYSYM_1 + index as u32, Action::Workspace(index)));
         let wanted: Vec<(u32, Action)> = wanted.into_iter().chain(digits).collect();
 
         for (keysym, action) in wanted {
@@ -246,7 +349,7 @@ impl Wm {
                 tracing::warn!(keysym, "key is not present in the keyboard mapping");
                 continue;
             };
-            let mod4 = u16::from(ModMask::M4);
+            let mod4 = self.mod_mask;
             let shifted = mod4 | u16::from(ModMask::SHIFT);
             let bases = match action {
                 Action::Quit => vec![shifted],
@@ -492,8 +595,9 @@ impl Wm {
 
         let monitor = self.pointer_monitor();
         let area = self.work_areas.get(monitor).copied().unwrap_or(self.screen);
-        let max_w = area.w.saturating_sub(2 * BORDER).max(MIN_SIZE);
-        let max_h = area.h.saturating_sub(2 * BORDER).max(MIN_SIZE);
+        let border = self.settings.border_width;
+        let max_w = area.w.saturating_sub(2 * border).max(MIN_SIZE);
+        let max_h = area.h.saturating_sub(2 * border).max(MIN_SIZE);
         let w = (geometry.width as u32).clamp(MIN_SIZE, max_w);
         let h = (geometry.height as u32).clamp(MIN_SIZE, max_h);
 
@@ -514,7 +618,7 @@ impl Wm {
                 .y(rect.y)
                 .width(rect.w)
                 .height(rect.h)
-                .border_width(BORDER),
+                .border_width(border),
         )?;
         self.conn.grab_button(
             false,
@@ -563,7 +667,7 @@ impl Wm {
     }
 
     fn switch_workspace(&mut self, target: usize) -> Result<()> {
-        if target >= WORKSPACE_COUNT || target == self.workspace {
+        if target >= self.settings.workspace_count || target == self.workspace {
             return Ok(());
         }
         self.workspace = target;
@@ -599,7 +703,7 @@ impl Wm {
     }
 
     fn move_to_workspace(&mut self, window: Window, target: usize) -> Result<()> {
-        if target >= WORKSPACE_COUNT {
+        if target >= self.settings.workspace_count {
             return Ok(());
         }
         let Some(client) = self.clients.iter_mut().find(|client| client.window == window) else {
@@ -714,9 +818,9 @@ impl Wm {
     fn update_borders(&self) -> Result<()> {
         for client in &self.clients {
             let color = if self.focused == Some(client.window) {
-                BORDER_FOCUSED
+                self.settings.border_focused
             } else {
-                BORDER_UNFOCUSED
+                self.settings.border_unfocused
             };
             self.conn
                 .change_window_attributes(client.window, &ChangeWindowAttributesAux::new().border_pixel(color))?;
@@ -777,7 +881,7 @@ impl Wm {
         } else if maximized {
             (self.work_areas.get(monitor).copied().unwrap_or(self.screen), 0)
         } else {
-            (restore.unwrap_or(current), BORDER)
+            (restore.unwrap_or(current), self.settings.border_width)
         };
 
         self.clients[index].rect = rect;
@@ -907,7 +1011,7 @@ impl Wm {
         let focused = self.focused;
 
         match *action {
-            Action::Terminal => spawn::spawn(&spawn::terminal_command("xterm"), &[]),
+            Action::Terminal => spawn::spawn(&spawn::terminal_command(self.settings.terminal.as_deref(), "xterm"), &[]),
             Action::Close => {
                 if let Some(window) = focused {
                     self.close(window)?;
@@ -942,7 +1046,7 @@ impl Wm {
             return Ok(());
         };
 
-        let mod_down = u16::from(event.state) & u16::from(ModMask::M4) != 0;
+        let mod_down = u16::from(event.state) & self.mod_mask != 0;
         let draggable = !client.maximized && !client.fullscreen;
         let initial = client.rect;
         self.focus(window)?;

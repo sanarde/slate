@@ -9,11 +9,13 @@ use std::error::Error;
 
 use x11rb::rust_connection::RustConnection;
 
+use crate::cfgd::Cfgd;
+use crate::config::Settings;
 use crate::spawn;
 
-pub fn run(command: &[String]) -> Result<(), Box<dyn Error>> {
+pub fn run(command: &[String], settings: Settings, cfgd: Option<Cfgd>) -> Result<(), Box<dyn Error>> {
     let (conn, screen_num) = RustConnection::connect(None)?;
-    let mut wm = wm::Wm::new(conn, screen_num)?;
+    let mut wm = wm::Wm::new(conn, screen_num, settings, cfgd)?;
 
     tracing::info!("managing the X11 display");
     spawn::spawn(command, &[]);
