@@ -25,12 +25,19 @@ pub struct Cursors {
 }
 
 impl Cursors {
-    pub fn new() -> Cursors {
-        let name = std::env::var("XCURSOR_THEME").unwrap_or_else(|_| DEFAULT_THEME.to_string());
-        let size = std::env::var("XCURSOR_SIZE")
-            .ok()
-            .and_then(|size| size.parse().ok())
-            .unwrap_or(DEFAULT_SIZE);
+    pub fn new(theme: Option<&str>, size: u32) -> Cursors {
+        let name = theme
+            .map(String::from)
+            .or_else(|| std::env::var("XCURSOR_THEME").ok())
+            .unwrap_or_else(|| DEFAULT_THEME.to_string());
+        let size = if size > 0 {
+            size
+        } else {
+            std::env::var("XCURSOR_SIZE")
+                .ok()
+                .and_then(|size| size.parse().ok())
+                .unwrap_or(DEFAULT_SIZE)
+        };
 
         Cursors {
             theme: CursorTheme::load(&name),

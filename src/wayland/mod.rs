@@ -6,6 +6,7 @@ mod grabs;
 mod handlers;
 mod input;
 mod render;
+mod settings;
 mod shell;
 mod state;
 mod udev;
@@ -17,18 +18,26 @@ use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 
 use crate::Backend;
+use crate::cfgd::Cfgd;
+use crate::config::Settings;
 use state::{ModKey, Slate};
 
-pub fn run(backend: Backend, command: &[String]) -> Result<(), Box<dyn Error>> {
+pub fn run(
+    backend: Backend,
+    command: &[String],
+    settings: Settings,
+    cfgd: Option<Cfgd>,
+) -> Result<(), Box<dyn Error>> {
     let mut event_loop: EventLoop<'static, Slate> = EventLoop::try_new()?;
     let display: Display<Slate> = Display::new()?;
 
-    let mod_key = if backend == Backend::Udev {
+    let default_mod_key = if backend == Backend::Udev {
         ModKey::Logo
     } else {
         ModKey::Alt
     };
-    let mut state = Slate::new(&event_loop, display, mod_key)?;
+    let mut state = Slate::new(&event_loop, display, settings, cfgd, default_mod_key)?;
+    settings::watch(&event_loop, &mut state)?;
 
     if backend == Backend::Udev {
         udev::init(&event_loop, &mut state)?;

@@ -26,13 +26,12 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::X11Wm;
 
 use super::cursor::Cursors;
+use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
 use super::udev::Udev;
+use crate::cfgd::Cfgd;
+use crate::config::Settings;
 use crate::spawn;
-
-pub const WORKSPACE_COUNT: usize = 9;
-const KEY_REPEAT_DELAY_MS: i32 = 200;
-const KEY_REPEAT_RATE_HZ: i32 = 25;
 
 #[derive(Clone, Copy)]
 pub enum ModKey {
@@ -66,6 +65,9 @@ pub struct Slate {
     pub cursor_status: CursorImageStatus,
     pub cursors: Cursors,
     pub mod_key: ModKey,
+    pub default_mod_key: ModKey,
+    pub settings: Settings,
+    pub cfgd: Option<Cfgd>,
     pub xwm: Option<X11Wm>,
     pub xdisplay: Option<u32>,
     pub udev: Option<Udev>,
@@ -82,7 +84,9 @@ impl Slate {
     pub fn new(
         event_loop: &EventLoop<'static, Slate>,
         display: Display<Slate>,
-        mod_key: ModKey,
+        settings: Settings,
+        cfgd: Option<Cfgd>,
+        default_mod_key: ModKey,
     ) -> Result<Slate, Box<dyn Error>> {
         let display_handle = display.handle();
         let loop_handle = event_loop.handle();
@@ -106,7 +110,7 @@ impl Slate {
 
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display_handle, "seat0");
-        seat.add_keyboard(Default::default(), KEY_REPEAT_DELAY_MS, KEY_REPEAT_RATE_HZ)?;
+        seat.add_keyboard(xkb_config(&settings.xkb), settings.repeat_delay, settings.repeat_rate)?;
         seat.add_pointer();
 
         Ok(Slate {
@@ -132,8 +136,11 @@ impl Slate {
             seat_state,
             seat,
             cursor_status: CursorImageStatus::default_named(),
-            cursors: Cursors::new(),
-            mod_key,
+            cursors: Cursors::new(settings.cursor_theme.as_deref(), settings.cursor_size),
+            mod_key: resolve_mod_key(settings.mod_key, default_mod_key),
+            default_mod_key,
+            settings,
+            cfgd,
             xwm: None,
             xdisplay: None,
             udev: None,
@@ -145,6 +152,12 @@ impl Slate {
         let mut envs = vec![("WAYLAND_DISPLAY", self.socket_name.clone())];
         if let Some(number) = self.xdisplay {
             envs.push(("DISPLAY", OsString::from(format!(":{number}"))));
+        }
+        if let Some(theme) = &self.settings.cursor_theme {
+            envs.push(("XCURSOR_THEME", OsString::from(theme)));
+        }
+        if self.settings.cursor_size > 0 {
+            envs.push(("XCURSOR_SIZE", OsString::from(self.settings.cursor_size.to_string())));
         }
         spawn::spawn(command, &envs);
     }
