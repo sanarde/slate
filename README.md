@@ -254,6 +254,28 @@ rule = firefox=client
 button-layout = close:maximize
 ```
 
+## Panels, scripts and IPC
+
+Slate answers over a Unix socket, `$XDG_RUNTIME_DIR/slate.sock`, or `slate-PID.sock` when that name is taken by a running instance. Programs that Slate starts get the path in `SLATE_SOCKET`. A request is one line and an answer is one line of JSON, `{"ok":true,"data":...}` or `{"ok":false,"error":"..."}`. `slatectl` is the client.
+
+```
+slatectl state                      # workspaces, windows and outputs
+slatectl windows                    # id, title, app_id, workspace, focused, floating, tiled, maximized, fullscreen, minimized
+slatectl focus ID                   # also restores a minimized window and changes the workspace
+slatectl action workspace 3         # any action of the key bindings, for example action exec foot
+slatectl layout 2 spiral
+slatectl move-to-workspace ID 4
+slatectl subscribe                  # JSON lines until interrupted
+```
+
+`state`, `windows`, `workspaces`, `outputs`, `version`, `focus ID`, `close ID`, `minimize ID`, `restore ID`, `move-to-workspace ID N`, `layout N NAME` and `action ACTION` are the commands. Workspaces are numbered from 1. `subscribe` prints the events `window-open`, `window-close`, `window-title`, `focus`, `workspace` and `layout`. Window ids are the X11 window ids in the X11 backend.
+
+```
+slatectl subscribe | while read -r line; do case "$line" in *'"event":"workspace"'*) pkill -SIGRTMIN+8 waybar ;; esac; done
+```
+
+The Wayland backend also implements `wlr-foreign-toplevel-management`, so taskbars (the `wlr/taskbar` module of Waybar, `sfwbar` and similar), window switchers and `wlrctl` list windows, activate, minimize, maximize and close them, and bring minimized windows back.
+
 ## Roadmap
 
 - Close animations and shadows for windows that draw their own decorations.
