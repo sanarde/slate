@@ -21,6 +21,8 @@ x11rb::atom_manager! {
         _NET_WM_STATE,
         _NET_WM_STATE_FULLSCREEN,
         _NET_WM_STATE_ABOVE,
+        _MOTIF_WM_HINTS,
+        _NET_FRAME_EXTENTS,
         _NET_WM_STATE_HIDDEN,
         _NET_WM_STATE_MAXIMIZED_VERT,
         _NET_WM_STATE_MAXIMIZED_HORZ,
