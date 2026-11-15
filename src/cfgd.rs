@@ -17,6 +17,8 @@ unsafe extern "C" {
     fn cfgd_get_bool(cfgd: *mut RawCfgd, key: *const c_char, value: *mut bool) -> bool;
     fn cfgd_get_int(cfgd: *mut RawCfgd, key: *const c_char, value: *mut i64) -> bool;
     fn cfgd_get_string(cfgd: *mut RawCfgd, key: *const c_char) -> *mut c_char;
+    fn cfgd_get_strv(cfgd: *mut RawCfgd, key: *const c_char, count: *mut usize) -> *mut *mut c_char;
+    fn cfgd_strv_free(strv: *mut *mut c_char, count: usize);
     fn cfgd_subscribe(cfgd: *mut RawCfgd, prefix: *const c_char, callback: ChangedFn, user: *mut c_void) -> c_int;
     fn cfgd_notify_fd(cfgd: *mut RawCfgd) -> c_int;
     fn cfgd_dispatch(cfgd: *mut RawCfgd);
@@ -90,6 +92,20 @@ impl Cfgd {
         let value = unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned();
         unsafe { free(pointer.cast()) };
         Some(value)
+    }
+
+    pub fn get_strv(&mut self, key: &str) -> Option<Vec<String>> {
+        let key = CString::new(key).expect("key has no NUL byte");
+        let mut count = 0;
+        let list = unsafe { cfgd_get_strv(self.raw, key.as_ptr(), &mut count) };
+        if list.is_null() {
+            return None;
+        }
+        let items = (0..count)
+            .map(|index| unsafe { CStr::from_ptr(*list.add(index)) }.to_string_lossy().into_owned())
+            .collect();
+        unsafe { cfgd_strv_free(list, count) };
+        Some(items)
     }
 }
 
