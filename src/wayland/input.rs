@@ -102,7 +102,7 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
     }
 }
 
-fn run(state: &mut Slate, action: Action) {
+pub(super) fn run(state: &mut Slate, action: Action) {
     match action {
         Action::Terminal => state.spawn(&spawn::terminal_command(state.settings.terminal.as_deref(), "foot")),
         Action::Exec(command) => state.spawn(&command),

@@ -91,8 +91,18 @@ impl XdgShellHandler for Slate {
         }
     }
 
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = shell::window_for_surface(self, surface.wl_surface())
+            && shell::window_id(&window) != 0
+        {
+            super::super::ipc::window_event(self, "window-title", &window);
+            super::super::foreign_toplevel::refresh(self);
+        }
+    }
+
     fn app_id_changed(&mut self, surface: ToplevelSurface) {
         super::decoration::reapply(self, &surface);
+        super::super::foreign_toplevel::refresh(self);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {

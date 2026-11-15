@@ -76,7 +76,7 @@ pub fn app_id(window: &Window) -> String {
     window.x11_surface().map(|surface| surface.class()).unwrap_or_default()
 }
 
-fn title(window: &Window) -> String {
+pub fn title(window: &Window) -> String {
     if let Some(toplevel) = window.toplevel() {
         return with_states(toplevel.wl_surface(), |states| {
             states

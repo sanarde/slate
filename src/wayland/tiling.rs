@@ -228,6 +228,7 @@ pub fn toggle_tiling(state: &mut Slate) {
     } else {
         Layout::MasterStack
     };
+    announce(state);
     arrange(state);
 }
 
@@ -235,7 +236,20 @@ pub fn layout_next(state: &mut Slate) {
     let workspace = state.workspace;
     let entry = &mut state.workspace_layouts[workspace];
     entry.layout = entry.layout.next();
+    announce(state);
     arrange(state);
+}
+
+fn announce(state: &Slate) {
+    let workspace = state.workspace;
+    super::ipc::emit(
+        state,
+        "layout",
+        &[
+            ("workspace", (workspace + 1).to_string()),
+            ("layout", crate::json::quote(state.workspace_layouts[workspace].layout.name())),
+        ],
+    );
 }
 
 pub fn toggle_floating(state: &mut Slate, window: &Window) {

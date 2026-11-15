@@ -44,6 +44,7 @@ use super::cursor::Cursors;
 use super::shadow::{Key as ShadowKey, ShadowSet};
 use super::decoration::Hit;
 use super::settings::{resolve_mod_key, xkb_config};
+use super::foreign_toplevel::ForeignToplevelState;
 use super::grabs::Resizing;
 use super::output_management::OutputManagementState;
 use super::outputs::OutputRecord;
@@ -51,6 +52,7 @@ use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::config::{ButtonKind, Settings};
 use crate::font::Fonts;
+use crate::ipc::Ipc;
 use crate::layout::WorkspaceLayout;
 use crate::source::ConfigSource;
 use crate::spawn;
@@ -74,6 +76,10 @@ pub struct Slate {
     pub minimized: Vec<(Window, Point<i32, Logical>)>,
     pub tile_order: Vec<Window>,
     pub animations: Animations,
+    pub next_window_id: u64,
+    pub last_focus: Option<u64>,
+    pub ipc: Option<Ipc>,
+    pub foreign_toplevel: ForeignToplevelState,
     pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
     pub workspace_layouts: Vec<WorkspaceLayout>,
     pub outputs: Vec<OutputRecord>,
@@ -173,6 +179,10 @@ impl Slate {
             minimized: Vec::new(),
             tile_order: Vec::new(),
             animations: Animations::default(),
+            next_window_id: 0,
+            last_focus: None,
+            ipc: None,
+            foreign_toplevel: ForeignToplevelState::new(&display_handle),
             shadows: RefCell::new(HashMap::new()),
             workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); 9],
             outputs: Vec::new(),
@@ -226,6 +236,9 @@ impl Slate {
         let mut envs = vec![("WAYLAND_DISPLAY", self.socket_name.clone())];
         if let Some(number) = self.xdisplay {
             envs.push(("DISPLAY", OsString::from(format!(":{number}"))));
+        }
+        if let Some(ipc) = &self.ipc {
+            envs.push(("SLATE_SOCKET", ipc.path().as_os_str().to_owned()));
         }
         if let Some(theme) = &self.settings.cursor_theme {
             envs.push(("XCURSOR_THEME", OsString::from(theme)));

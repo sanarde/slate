@@ -18,7 +18,9 @@ use smithay::xwayland::X11Surface;
 use super::focus::KeyFocus;
 use super::animation;
 use super::decoration;
+use super::foreign_toplevel;
 use super::grabs;
+use super::ipc;
 use super::scale;
 use super::tiling;
 use super::state::Slate;
@@ -32,6 +34,7 @@ pub(super) struct WindowState {
     pub(super) floating: bool,
     pub(super) tiled: bool,
     pub(super) float_rect: Option<Rectangle<i32, Logical>>,
+    pub(super) id: u64,
 }
 
 pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> {
@@ -65,7 +68,12 @@ pub fn map_window(state: &mut Slate, window: Window) {
 
 fn place_window(state: &mut Slate, window: Window) {
     let workspace = state.workspace;
-    with_window_state(&window, |window_state| window_state.workspace = workspace);
+    state.next_window_id += 1;
+    let id = state.next_window_id;
+    with_window_state(&window, |window_state| {
+        window_state.workspace = workspace;
+        window_state.id = id;
+    });
     let size = window.geometry().size;
     let insets = decoration::insets(state, &window);
     let frame_width = size.w + insets.left + insets.right;
@@ -82,12 +90,17 @@ fn place_window(state: &mut Slate, window: Window) {
     tiling::register(state, &window);
     state.space.map_element(window.clone(), location, false);
     scale::update(state);
+    ipc::window_event(state, "window-open", &window);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
     animation::start_open(state, &window);
+    foreign_toplevel::refresh(state);
 }
 
 pub fn unmap_window(state: &mut Slate, window: &Window) {
+    if !state.pending_windows.contains(window) {
+        ipc::window_event(state, "window-close", window);
+    }
     state.pending_windows.retain(|pending| pending != window);
     state.parked.retain(|(parked, _)| parked != window);
     state.minimized.retain(|(minimized, _)| minimized != window);
@@ -99,6 +112,7 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+    foreign_toplevel::refresh(state);
 }
 
 pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) {
@@ -122,6 +136,17 @@ pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) 
     let focus = window.and_then(KeyFocus::from_window);
     let keyboard = state.seat.get_keyboard().unwrap();
     keyboard.set_focus(state, focus, serial);
+
+    let id = window.map(window_id);
+    if state.last_focus != id {
+        state.last_focus = id;
+        ipc::emit(
+            state,
+            "focus",
+            &[("id", id.map_or("null".to_string(), |id| id.to_string()))],
+        );
+        foreign_toplevel::refresh(state);
+    }
 }
 
 pub(super) fn is_override_redirect(window: &Window) -> bool {
@@ -172,6 +197,7 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
     for window in &sliding {
         animation::start_slide(state, window, target > previous);
     }
+    ipc::emit(state, "workspace", &[("index", (target + 1).to_string())]);
 }
 
 pub fn clamp_workspaces(state: &mut Slate) {
@@ -247,6 +273,7 @@ pub fn minimize_window(state: &mut Slate, window: &Window) {
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+    foreign_toplevel::refresh(state);
 }
 
 pub fn restore_window(state: &mut Slate, window: &Window) {
@@ -264,12 +291,25 @@ pub fn restore_window(state: &mut Slate, window: &Window) {
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
     animation::start_open(state, &window);
+    foreign_toplevel::refresh(state);
 }
 
 pub fn restore_last_minimized(state: &mut Slate) {
     if let Some((window, _)) = state.minimized.last().cloned() {
         restore_window(state, &window);
     }
+}
+
+pub fn activate_window(state: &mut Slate, window: &Window) {
+    if state.minimized.iter().any(|(minimized, _)| minimized == window) {
+        restore_window(state, window);
+        return;
+    }
+    let workspace = workspace_of(window);
+    if workspace != state.workspace {
+        switch_workspace(state, workspace);
+    }
+    focus_window(state, Some(window), SERIAL_COUNTER.next_serial());
 }
 
 pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
@@ -348,6 +388,14 @@ pub fn toggle_maximized(state: &mut Slate, window: &Window) {
 pub fn toggle_fullscreen(state: &mut Slate, window: &Window) {
     let fullscreen = with_window_state(window, |window_state| window_state.fullscreen);
     set_fullscreen(state, window, !fullscreen);
+}
+
+pub fn window_id(window: &Window) -> u64 {
+    with_window_state(window, |window_state| window_state.id)
+}
+
+pub fn is_floating(window: &Window) -> bool {
+    with_window_state(window, |window_state| window_state.floating)
 }
 
 pub fn flags(window: &Window) -> (bool, bool) {
@@ -479,6 +527,7 @@ fn resize_to_state(
         let to = decoration::frame_of(geometry, decoration::insets(state, window));
         animation::start_geometry(state, window, from, to);
     }
+    foreign_toplevel::refresh(state);
 }
 
 fn send_current_state(window: &Window) {

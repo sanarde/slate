@@ -4,9 +4,11 @@ mod animation;
 mod cursor;
 mod decoration;
 mod focus;
+mod foreign_toplevel;
 mod grabs;
 mod handlers;
 mod input;
+mod ipc;
 mod lock;
 mod output_management;
 mod outputs;
@@ -47,6 +49,7 @@ pub fn run(
     };
     let mut state = Slate::new(&event_loop, display, settings, config, default_mod_key)?;
     settings::watch(&event_loop, &mut state)?;
+    ipc::start(&event_loop, &mut state)?;
 
     if backend == Backend::Udev {
         udev::init(&event_loop, &mut state)?;
