@@ -5,6 +5,7 @@ use std::error::Error;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::io::Errno;
 use x11rb::connection::Connection;
+use x11rb::properties::WmHints;
 use x11rb::protocol::randr::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::*;
 use x11rb::protocol::Event;
@@ -64,6 +65,8 @@ struct Client {
     workspace: usize,
     hidden: bool,
     pending_unmaps: u32,
+    accepts_input: bool,
+    above: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -310,6 +313,7 @@ impl Wm {
             atoms._NET_CLOSE_WINDOW,
             atoms._NET_WM_STATE,
             atoms._NET_WM_STATE_FULLSCREEN,
+            atoms._NET_WM_STATE_ABOVE,
             atoms._NET_WM_STATE_MAXIMIZED_VERT,
             atoms._NET_WM_STATE_MAXIMIZED_HORZ,
             atoms._NET_WM_WINDOW_TYPE,
@@ -632,6 +636,12 @@ impl Wm {
             ModMask::ANY,
         )?;
 
+        let hints = WmHints::get(&self.conn, window)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok().flatten());
+        let accepts_input = hints.and_then(|hints| hints.input).unwrap_or(true);
+        let initial_state = self.atoms_of(window, self.atoms._NET_WM_STATE);
+
         self.clients.push(Client {
             window,
             rect,
@@ -643,6 +653,8 @@ impl Wm {
             workspace: self.workspace,
             hidden: false,
             pending_unmaps: 0,
+            accepts_input,
+            above: initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
         });
         self.conn.change_property32(
             PropMode::REPLACE,
@@ -653,7 +665,15 @@ impl Wm {
         )?;
         self.conn.map_window(window)?;
         self.update_client_list()?;
-        self.focus(window)
+        self.focus(window)?;
+
+        let fullscreen = initial_state.contains(&self.atoms._NET_WM_STATE_FULLSCREEN);
+        let maximized = initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
+            && initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_HORZ);
+        if fullscreen || maximized {
+            self.set_state(window, Some(maximized), Some(fullscreen))?;
+        }
+        self.restack()
     }
 
     fn unmapped(&mut self, window: Window) -> Result<()> {
@@ -692,7 +712,7 @@ impl Wm {
         )?;
 
         self.focused = None;
-        let top = self.clients.iter().rev().find(|client| client.workspace == target).map(|client| client.window);
+        let top = self.focus_candidate(target);
         match top {
             Some(window) => self.focus(window),
             None => {
@@ -726,7 +746,7 @@ impl Wm {
         self.conn.unmap_window(window)?;
 
         let current = self.workspace;
-        let top = self.clients.iter().rev().find(|client| client.workspace == current).map(|client| client.window);
+        let top = self.focus_candidate(current);
         match top {
             Some(top) => self.focus(top),
             None => {
@@ -755,7 +775,7 @@ impl Wm {
         if self.focused == Some(window) {
             self.focused = None;
             let current = self.workspace;
-            match self.clients.iter().rev().find(|client| client.workspace == current).map(|client| client.window) {
+            match self.focus_candidate(current) {
                 Some(top) => self.focus(top)?,
                 None => {
                     self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -802,17 +822,50 @@ impl Wm {
         };
         let client = self.clients.remove(index);
         let take_focus = client.take_focus;
+        let accepts_input = client.accepts_input;
         self.clients.push(client);
 
-        self.conn.set_input_focus(InputFocus::POINTER_ROOT, window, CURRENT_TIME)?;
+        self.conn
+            .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+        if !accepts_input && !take_focus {
+            return self.restack();
+        }
+        if accepts_input {
+            self.conn.set_input_focus(InputFocus::POINTER_ROOT, window, CURRENT_TIME)?;
+        }
         if take_focus {
             self.send_protocol(window, self.atoms.WM_TAKE_FOCUS)?;
         }
-        self.conn
-            .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
         self.focused = Some(window);
         self.set_active_window(window)?;
-        self.update_borders()
+        self.update_borders()?;
+        self.restack()
+    }
+
+    fn focus_candidate(&self, workspace: usize) -> Option<Window> {
+        self.clients
+            .iter()
+            .rev()
+            .find(|client| client.workspace == workspace && (client.accepts_input || client.take_focus))
+            .map(|client| client.window)
+    }
+
+    fn restack(&self) -> Result<()> {
+        let fullscreen = self
+            .clients
+            .iter()
+            .any(|client| client.fullscreen && !client.hidden && Some(client.window) == self.focused);
+        if !fullscreen {
+            for dock in &self.docks {
+                self.conn
+                    .configure_window(*dock, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+            }
+        }
+        for client in self.clients.iter().filter(|client| client.above && !client.hidden) {
+            self.conn
+                .configure_window(client.window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+        }
+        Ok(())
     }
 
     fn update_borders(&self) -> Result<()> {
@@ -870,9 +923,9 @@ impl Wm {
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
-        let (maximized, fullscreen, current, restore) = {
+        let (maximized, fullscreen, above, current, restore) = {
             let client = &self.clients[index];
-            (client.maximized, client.fullscreen, client.rect, client.restore)
+            (client.maximized, client.fullscreen, client.above, client.rect, client.restore)
         };
         let monitor = self.monitor_index(&current);
 
@@ -898,6 +951,9 @@ impl Wm {
         let mut states = Vec::new();
         if fullscreen {
             states.push(self.atoms._NET_WM_STATE_FULLSCREEN);
+        }
+        if above {
+            states.push(self.atoms._NET_WM_STATE_ABOVE);
         }
         if maximized {
             states.push(self.atoms._NET_WM_STATE_MAXIMIZED_VERT);
@@ -993,14 +1049,23 @@ impl Wm {
 
         let mut maximized = None;
         let mut fullscreen = None;
+        let mut above = None;
         for property in [data[1], data[2]] {
             if property == atoms._NET_WM_STATE_FULLSCREEN {
                 fullscreen = Some(apply(client.fullscreen));
+            } else if property == atoms._NET_WM_STATE_ABOVE {
+                above = Some(apply(client.above));
             } else if property == atoms._NET_WM_STATE_MAXIMIZED_VERT || property == atoms._NET_WM_STATE_MAXIMIZED_HORZ {
                 maximized = Some(apply(client.maximized));
             }
         }
-        self.set_state(event.window, maximized, fullscreen)
+        if let Some(above) = above
+            && let Some(client) = self.clients.iter_mut().find(|client| client.window == event.window)
+        {
+            client.above = above;
+        }
+        self.set_state(event.window, maximized, fullscreen)?;
+        self.restack()
     }
 
     fn key_press(&mut self, event: &KeyPressEvent) -> Result<()> {
