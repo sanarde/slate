@@ -4,6 +4,7 @@ use std::error::Error;
 
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::io::Errno;
+use rustix::time::Timespec;
 use x11rb::connection::Connection;
 use x11rb::properties::WmHints;
 use x11rb::protocol::randr::{self, ConnectionExt as _};
@@ -17,9 +18,11 @@ use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
 use crate::bindings::{Action, Binding};
-use crate::cfgd::Cfgd;
-use crate::config::{ModKeySetting, PREFIX, Settings};
+use crate::config::{ModKeySetting, Settings};
+use crate::source::ConfigSource;
 use crate::spawn;
+
+const POLL_SECONDS: i64 = 1;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -88,13 +91,13 @@ pub struct Wm {
     focused: Option<Window>,
     workspace: usize,
     settings: Settings,
-    cfgd: Option<Cfgd>,
+    config: ConfigSource,
     mod_mask: u16,
     running: bool,
 }
 
 impl Wm {
-    pub fn new(conn: RustConnection, screen_num: usize, settings: Settings, cfgd: Option<Cfgd>) -> Result<Wm> {
+    pub fn new(conn: RustConnection, screen_num: usize, settings: Settings, config: ConfigSource) -> Result<Wm> {
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
         let screen_rect = Rect::new(0, 0, screen.width_in_pixels as u32, screen.height_in_pixels as u32);
@@ -123,7 +126,7 @@ impl Wm {
             workspace: 0,
             mod_mask: mod_mask_of(settings.mod_key),
             settings,
-            cfgd,
+            config,
             running: true,
         };
 
@@ -139,12 +142,11 @@ impl Wm {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let notify = self.cfgd.as_ref().and_then(|cfgd| cfgd.notify_fd());
-        if let Some(cfgd) = self.cfgd.as_mut()
-            && !cfgd.subscribe(PREFIX)
-        {
-            tracing::warn!("failed to subscribe to cfgd changes");
-        }
+        let notify = self.config.notify_fd();
+        let timeout = Timespec {
+            tv_sec: POLL_SECONDS,
+            tv_nsec: 0,
+        };
 
         while self.running {
             while let Some(event) = self.conn.poll_for_event()? {
@@ -161,28 +163,21 @@ impl Wm {
             if let Some(notify) = &notify {
                 fds.push(PollFd::new(notify, PollFlags::IN));
             }
-            match poll(&mut fds, None) {
+            match poll(&mut fds, Some(&timeout)) {
                 Ok(_) | Err(Errno::INTR) => {}
                 Err(error) => return Err(error.into()),
             }
-            if notify.is_some() && fds[1].revents().contains(PollFlags::IN) {
-                self.reload_settings()?;
-            }
+            self.reload_settings()?;
         }
         Ok(())
     }
 
     fn reload_settings(&mut self) -> Result<()> {
-        let Some(mut cfgd) = self.cfgd.take() else {
+        if !self.config.changed() {
             return Ok(());
-        };
-        let settings = cfgd.dispatch().then(|| Settings::load(&mut cfgd));
-        self.cfgd = Some(cfgd);
-
-        match settings {
-            Some(settings) => self.apply_settings(settings),
-            None => Ok(()),
         }
+        let settings = self.config.settings();
+        self.apply_settings(settings)
     }
 
     fn apply_settings(&mut self, new: Settings) -> Result<()> {
