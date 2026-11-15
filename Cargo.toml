@@ -9,10 +9,19 @@ license = "GPL-3.0-only"
 
 [dependencies]
 smithay = { version = "0.7.0", default-features = false, features = [
+    "backend_drm",
+    "backend_egl",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
     "backend_winit",
     "desktop",
     "renderer_gl",
     "wayland_frontend",
+    "xwayland",
 ] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+x11rb = { version = "0.13", features = ["randr"] }
+xcursor = "0.3"
