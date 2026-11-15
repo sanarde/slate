@@ -15,7 +15,15 @@ use smithay::reexports::wayland_server::backend::ClientData;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
+use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::pointer_gestures::PointerGesturesState;
+use smithay::wayland::relative_pointer::RelativePointerManagerState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
+use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
@@ -28,6 +36,8 @@ use smithay::xwayland::X11Wm;
 use super::cursor::Cursors;
 use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
+use super::output_management::OutputManagementState;
+use super::outputs::OutputRecord;
 use super::udev::Udev;
 use crate::cfgd::Cfgd;
 use crate::config::Settings;
@@ -49,6 +59,8 @@ pub struct Slate {
     pub pending_windows: Vec<Window>,
     pub parked: Vec<(Window, Point<i32, Logical>)>,
     pub workspace: usize,
+    pub outputs: Vec<OutputRecord>,
+    pub output_management: OutputManagementState,
     pub resizing: Option<Resizing>,
     pub popups: PopupManager,
     pub compositor_state: CompositorState,
@@ -61,6 +73,14 @@ pub struct Slate {
     pub dmabuf_global: Option<DmabufGlobal>,
     pub seat_state: SeatState<Slate>,
     pub data_device_state: DataDeviceState,
+    pub primary_selection_state: PrimarySelectionState,
+    pub activation_state: XdgActivationState,
+    pub idle_notifier_state: IdleNotifierState<Slate>,
+    pub viewporter_state: ViewporterState,
+    pub cursor_shape_state: CursorShapeManagerState,
+    pub relative_pointer_state: RelativePointerManagerState,
+    pub single_pixel_buffer_state: SinglePixelBufferState,
+    pub pointer_gestures_state: PointerGesturesState,
     pub seat: Seat<Slate>,
     pub cursor_status: CursorImageStatus,
     pub cursors: Cursors,
@@ -122,6 +142,8 @@ impl Slate {
             pending_windows: Vec::new(),
             parked: Vec::new(),
             workspace: 0,
+            outputs: Vec::new(),
+            output_management: OutputManagementState::new(&display_handle),
             resizing: None,
             popups: PopupManager::default(),
             compositor_state: CompositorState::new::<Slate>(&display_handle),
@@ -133,6 +155,14 @@ impl Slate {
             dmabuf_state: DmabufState::new(),
             dmabuf_global: None,
             data_device_state: DataDeviceState::new::<Slate>(&display_handle),
+            primary_selection_state: PrimarySelectionState::new::<Slate>(&display_handle),
+            activation_state: XdgActivationState::new::<Slate>(&display_handle),
+            idle_notifier_state: IdleNotifierState::new(&display_handle, event_loop.handle()),
+            viewporter_state: ViewporterState::new::<Slate>(&display_handle),
+            cursor_shape_state: CursorShapeManagerState::new::<Slate>(&display_handle),
+            relative_pointer_state: RelativePointerManagerState::new::<Slate>(&display_handle),
+            single_pixel_buffer_state: SinglePixelBufferState::new::<Slate>(&display_handle),
+            pointer_gestures_state: PointerGesturesState::new::<Slate>(&display_handle),
             seat_state,
             seat,
             cursor_status: CursorImageStatus::default_named(),

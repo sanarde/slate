@@ -10,6 +10,8 @@ use smithay::reexports::calloop::EventLoop;
 use smithay::utils::Transform;
 
 use super::input;
+use super::output_management;
+use super::outputs;
 use super::render::{self, CLEAR_COLOR};
 use super::state::Slate;
 
@@ -33,10 +35,9 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
             model: "Winit".to_string(),
         },
     );
-    let _global = output.create_global::<Slate>(&state.display_handle);
     output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
-    state.space.map_output(&output, (0, 0));
+    outputs::register(state, &output, (0, 0).into());
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
 
@@ -49,6 +50,7 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
             output.change_current_state(Some(mode), None, None, None);
             output.set_preferred(mode);
             smithay::desktop::layer_map_for_output(&output).arrange();
+            output_management::refresh(state);
         }
         WinitEvent::Redraw => {
             if let Err(error) = redraw(&mut backend, &output, &mut damage_tracker, state) {

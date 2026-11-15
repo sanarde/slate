@@ -5,6 +5,8 @@ mod focus;
 mod grabs;
 mod handlers;
 mod input;
+mod output_management;
+mod outputs;
 mod render;
 mod settings;
 mod shell;

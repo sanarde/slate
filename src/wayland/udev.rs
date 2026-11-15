@@ -25,10 +25,10 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::drm::control::{Device as ControlDevice, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::{Device, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
-use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::DeviceFd;
 
 use super::input;
+use super::outputs;
 use super::render::{self, CLEAR_COLOR};
 use super::state::Slate;
 use crate::config::Settings;
@@ -40,7 +40,7 @@ type Compositor = DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporte
 
 struct Surface {
     output: Output,
-    global: GlobalId,
+    enabled: bool,
     connector: connector::Handle,
     compositor: Compositor,
     queued: bool,
@@ -172,6 +172,39 @@ impl Udev {
         self.devices.push(device);
     }
 
+    pub fn set_enabled(&mut self, output: &Output, enabled: bool) {
+        let Some(surface) = self.surfaces.values_mut().find(|surface| &surface.output == output) else {
+            return;
+        };
+        surface.enabled = enabled;
+        surface.queued = false;
+        if !enabled && let Err(error) = surface.compositor.clear() {
+            tracing::warn!(%error, "failed to turn the output off");
+        }
+    }
+
+    pub fn set_mode(&mut self, output: &Output, mode: OutputMode) -> Result<(), String> {
+        let surface = self
+            .surfaces
+            .values_mut()
+            .find(|surface| &surface.output == output)
+            .ok_or("the output is not driven by this backend")?;
+        let connector = self
+            .device
+            .get_connector(surface.connector, false)
+            .map_err(|error| format!("failed to query the connector: {error}"))?;
+        let drm_mode = connector
+            .modes()
+            .iter()
+            .find(|candidate| OutputMode::from(**candidate) == mode)
+            .copied()
+            .ok_or("the connector has no such mode")?;
+        surface
+            .compositor
+            .use_mode(drm_mode)
+            .map_err(|error| format!("failed to set the mode: {error}"))
+    }
+
     pub fn apply_input_settings(&mut self, settings: &Settings) {
         for device in &mut self.devices {
             configure_device(device, settings);
@@ -264,8 +297,7 @@ fn scan(state: &mut Slate, udev: &mut Udev) -> Vec<crtc::Handle> {
     for crtc in gone {
         let surface = udev.surfaces.remove(&crtc).unwrap();
         tracing::info!(output = surface.output.name(), "output removed");
-        state.space.unmap_output(&surface.output);
-        state.display_handle.disable_global::<Slate>(surface.global);
+        outputs::unregister(state, &surface.output);
     }
 
     let mut added = Vec::new();
@@ -331,6 +363,9 @@ fn add_surface(
         },
     );
     let output_mode = OutputMode::from(mode);
+    for known in info.modes() {
+        output.add_mode(OutputMode::from(*known));
+    }
     let x = state
         .space
         .outputs()
@@ -339,10 +374,9 @@ fn add_surface(
         .max()
         .unwrap_or(0);
 
-    let global = output.create_global::<Slate>(&state.display_handle);
     output.change_current_state(Some(output_mode), None, None, Some((x, 0).into()));
     output.set_preferred(output_mode);
-    state.space.map_output(&output, (x, 0));
+    outputs::register(state, &output, (x, 0).into());
 
     let drm_surface = udev.device.create_surface(crtc, mode, &[info.handle()])?;
     let allocator = GbmAllocator::new(udev.gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
@@ -371,7 +405,7 @@ fn add_surface(
         crtc,
         Surface {
             output,
-            global,
+            enabled: true,
             connector: info.handle(),
             compositor,
             queued: false,
@@ -379,6 +413,18 @@ fn add_surface(
         },
     );
     Ok(crtc)
+}
+
+pub fn redraw(state: &mut Slate, output: &Output) {
+    let crtc = state.udev.as_ref().and_then(|udev| {
+        udev.surfaces
+            .iter()
+            .find(|(_, surface)| &surface.output == output)
+            .map(|(crtc, _)| *crtc)
+    });
+    if let Some(crtc) = crtc {
+        render(state, crtc);
+    }
 }
 
 fn frame_submitted(state: &mut Slate, crtc: crtc::Handle) {
@@ -402,6 +448,7 @@ fn render(state: &mut Slate, crtc: crtc::Handle) {
 
     if udev.active
         && let Some(surface) = udev.surfaces.get_mut(&crtc)
+        && surface.enabled
         && !surface.queued
     {
         render_surface(state, &mut udev.renderer, surface);
