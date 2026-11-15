@@ -49,21 +49,21 @@ Key bindings. Mod is Super, except in `winit` where it is Alt.
 | Mod+q | Close the focused window |
 | Mod+m | Toggle maximized |
 | Mod+f | Toggle fullscreen |
+| Mod+1 to Mod+9 | Switch to a workspace |
+| Mod+Shift+1 to Mod+Shift+9 | Move the focused window to a workspace |
 | Mod+Shift+e | Quit |
 | Mod+left button, drag | Move the window |
 | Mod+right button, drag | Resize the window |
 | Ctrl+Alt+F1 to F12 | Switch virtual terminal (`udev` only) |
 
-Focus follows clicks. The Wayland backend implements xdg-shell, wlr-layer-shell, xdg-output, the data device and XWayland. The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE` and RandR monitors.
+Focus follows clicks. The Wayland backend implements xdg-shell, wlr-layer-shell, xdg-output, the data device and XWayland. The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE`, `_NET_CURRENT_DESKTOP` and RandR monitors. There are nine workspaces shared by all outputs.
 
 ## Roadmap
 
 - Tiling layout as a setting, floating stays the default.
 - Settings through cfgd.
 - Server-side decorations (xdg-decoration).
-- linux-dmabuf, so that GPU clients do not fall back to shared memory.
 - Screen capture, idle and session lock protocols.
-- Workspaces.
 
 ## Acknowledgments
 
