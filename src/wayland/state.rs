@@ -13,6 +13,7 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use smithay::reexports::wayland_server::backend::ClientData;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::output::OutputManagerState;
@@ -29,6 +30,7 @@ use super::grabs::Resizing;
 use super::udev::Udev;
 use crate::spawn;
 
+pub const WORKSPACE_COUNT: usize = 9;
 const KEY_REPEAT_DELAY_MS: i32 = 200;
 const KEY_REPEAT_RATE_HZ: i32 = 25;
 
@@ -46,6 +48,8 @@ pub struct Slate {
     pub loop_signal: LoopSignal,
     pub space: Space<Window>,
     pub pending_windows: Vec<Window>,
+    pub parked: Vec<(Window, Point<i32, Logical>)>,
+    pub workspace: usize,
     pub resizing: Option<Resizing>,
     pub popups: PopupManager,
     pub compositor_state: CompositorState,
@@ -112,6 +116,8 @@ impl Slate {
             loop_signal: event_loop.get_signal(),
             space: Space::default(),
             pending_windows: Vec::new(),
+            parked: Vec::new(),
+            workspace: 0,
             resizing: None,
             popups: PopupManager::default(),
             compositor_state: CompositorState::new::<Slate>(&display_handle),

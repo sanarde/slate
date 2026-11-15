@@ -17,13 +17,14 @@ use smithay::xwayland::X11Surface;
 
 use super::focus::KeyFocus;
 use super::grabs;
-use super::state::Slate;
+use super::state::{Slate, WORKSPACE_COUNT};
 
 #[derive(Default)]
 struct WindowState {
     restore: Option<Rectangle<i32, Logical>>,
     maximized: bool,
     fullscreen: bool,
+    workspace: usize,
 }
 
 pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> {
@@ -31,6 +32,7 @@ pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> 
         .space
         .elements()
         .chain(state.pending_windows.iter())
+        .chain(state.parked.iter().map(|(window, _)| window))
         .find(|window| window.toplevel().is_some_and(|toplevel| toplevel.wl_surface() == surface))
         .cloned()
 }
@@ -39,6 +41,7 @@ pub fn window_for_x11(state: &Slate, surface: &X11Surface) -> Option<Window> {
     state
         .space
         .elements()
+        .chain(state.parked.iter().map(|(window, _)| window))
         .find(|window| window.x11_surface() == Some(surface))
         .cloned()
 }
@@ -52,6 +55,8 @@ pub fn map_window(state: &mut Slate, window: Window) {
 }
 
 fn place_window(state: &mut Slate, window: Window) {
+    let workspace = state.workspace;
+    with_window_state(&window, |window_state| window_state.workspace = workspace);
     let size = window.geometry().size;
     let zone = active_zone(state);
     let location = Point::from((
@@ -68,6 +73,7 @@ fn place_window(state: &mut Slate, window: Window) {
 
 pub fn unmap_window(state: &mut Slate, window: &Window) {
     state.pending_windows.retain(|pending| pending != window);
+    state.parked.retain(|(parked, _)| parked != window);
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
 
@@ -93,6 +99,68 @@ pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) 
     let focus = window.and_then(KeyFocus::from_window);
     let keyboard = state.seat.get_keyboard().unwrap();
     keyboard.set_focus(state, focus, serial);
+}
+
+fn is_override_redirect(window: &Window) -> bool {
+    window
+        .x11_surface()
+        .is_some_and(|surface| surface.is_override_redirect())
+}
+
+fn workspace_of(window: &Window) -> usize {
+    with_window_state(window, |window_state| window_state.workspace)
+}
+
+pub fn switch_workspace(state: &mut Slate, target: usize) {
+    if target >= WORKSPACE_COUNT || target == state.workspace {
+        return;
+    }
+
+    let leaving: Vec<Window> = state
+        .space
+        .elements()
+        .filter(|window| !is_override_redirect(window))
+        .cloned()
+        .collect();
+    for window in leaving {
+        if let Some(location) = state.space.element_location(&window) {
+            state.parked.push((window.clone(), location));
+        }
+        state.space.unmap_elem(&window);
+    }
+
+    state.workspace = target;
+    let arriving: Vec<(Window, Point<i32, Logical>)> = state
+        .parked
+        .iter()
+        .filter(|(window, _)| workspace_of(window) == target)
+        .cloned()
+        .collect();
+    state.parked.retain(|(window, _)| workspace_of(window) != target);
+    for (window, location) in arriving {
+        state.space.map_element(window, location, false);
+    }
+
+    let top = state.space.elements().next_back().cloned();
+    focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+}
+
+pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
+    if target >= WORKSPACE_COUNT {
+        return;
+    }
+    with_window_state(window, |window_state| window_state.workspace = target);
+    if target == state.workspace {
+        return;
+    }
+
+    if let Some(location) = state.space.element_location(window) {
+        state.parked.push((window.clone(), location));
+    }
+    state.space.unmap_elem(window);
+
+    let top = state.space.elements().next_back().cloned();
+    focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
 }
 
 pub fn focused_window(state: &Slate) -> Option<Window> {
