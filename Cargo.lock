@@ -1480,6 +1480,7 @@ name = "slate"
 version = "0.1.0"
 dependencies = [
  "fontdue",
+ "libloading",
  "rustix 1.1.6",
  "smithay",
  "tracing",
