@@ -5,6 +5,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
@@ -17,6 +18,7 @@ use smithay::backend::renderer::ImportDma;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{UdevBackend, UdevEvent, primary_gpu};
+use smithay::wayland::dmabuf::DmabufFeedbackBuilder;
 use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -79,6 +81,16 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
     let context = EGLContext::new(&egl)?;
     let renderer = unsafe { GlesRenderer::new(context)? };
 
+    let render_node = node
+        .node_with_type(NodeType::Render)
+        .and_then(Result::ok)
+        .unwrap_or(node);
+    let feedback = DmabufFeedbackBuilder::new(render_node.dev_id(), renderer.dmabuf_formats()).build()?;
+    let dmabuf_global = state
+        .dmabuf_state
+        .create_global_with_default_feedback::<Slate>(&state.display_handle, &feedback);
+    state.dmabuf_global = Some(dmabuf_global);
+
     let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
     libinput
         .udev_assign_seat(&seat)
@@ -133,6 +145,12 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
     }
 
     Ok(())
+}
+
+impl Udev {
+    pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
+        self.renderer.import_dmabuf(dmabuf, None).is_ok()
+    }
 }
 
 pub fn change_vt(state: &mut Slate, vt: i32) {

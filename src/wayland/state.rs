@@ -14,6 +14,7 @@ use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, LoopSignal, M
 use smithay::reexports::wayland_server::backend::ClientData;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
@@ -53,6 +54,8 @@ pub struct Slate {
     pub xwayland_shell_state: XWaylandShellState,
     pub output_manager_state: OutputManagerState,
     pub shm_state: ShmState,
+    pub dmabuf_state: DmabufState,
+    pub dmabuf_global: Option<DmabufGlobal>,
     pub seat_state: SeatState<Slate>,
     pub data_device_state: DataDeviceState,
     pub seat: Seat<Slate>,
@@ -117,6 +120,8 @@ impl Slate {
             xwayland_shell_state: XWaylandShellState::new::<Slate>(&display_handle),
             output_manager_state: OutputManagerState::new_with_xdg_output::<Slate>(&display_handle),
             shm_state: ShmState::new::<Slate>(&display_handle, vec![]),
+            dmabuf_state: DmabufState::new(),
+            dmabuf_global: None,
             data_device_state: DataDeviceState::new::<Slate>(&display_handle),
             seat_state,
             seat,
