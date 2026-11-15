@@ -405,3 +405,37 @@ summary = Also start the applications listed in the XDG autostart directories
 type = b
 default = true
 summary = Export the display variables to the D-Bus and systemd user environments so that services find the session
+
+[gesture-fingers]
+type = i
+default = 3
+min = 3
+max = 4
+summary = Number of fingers of the touchpad swipe that Slate handles itself, swipes with other counts go to the application. Wayland on a TTY only
+
+[gesture-threshold]
+type = i
+default = 100
+min = 20
+max = 500
+summary = Distance a swipe has to travel before it counts. Wayland on a TTY only
+
+[gesture-swipe-left]
+type = s
+default = workspace-next
+summary = Action of a swipe to the left, any action of the key bindings. Wayland on a TTY only
+
+[gesture-swipe-right]
+type = s
+default = workspace-prev
+summary = Action of a swipe to the right. Wayland on a TTY only
+
+[gesture-swipe-up]
+type = s
+default = none
+summary = Action of a swipe up. Wayland on a TTY only
+
+[gesture-swipe-down]
+type = s
+default = none
+summary = Action of a swipe down. Wayland on a TTY only

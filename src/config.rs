@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::bindings::{self, Binding};
+use crate::bindings::{self, Action, Binding};
 use crate::layout::Layout;
 use crate::rules::{self, Rule};
 
@@ -54,6 +54,12 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("cursor-size", "0"),
     ("tap-to-click", "true"),
     ("natural-scroll", "false"),
+    ("gesture-fingers", "3"),
+    ("gesture-threshold", "100"),
+    ("gesture-swipe-left", "workspace-next"),
+    ("gesture-swipe-right", "workspace-prev"),
+    ("gesture-swipe-up", "none"),
+    ("gesture-swipe-down", "none"),
     ("xdg-autostart", "false"),
     ("session-environment", "true"),
     ("decoration-mode", "server"),
@@ -265,6 +271,16 @@ pub struct Decoration {
 }
 
 #[derive(Clone, PartialEq)]
+pub struct Gestures {
+    pub fingers: u32,
+    pub threshold: f64,
+    pub left: Option<Action>,
+    pub right: Option<Action>,
+    pub up: Option<Action>,
+    pub down: Option<Action>,
+}
+
+#[derive(Clone, PartialEq)]
 pub struct Settings {
     pub mod_key: ModKeySetting,
     pub terminal: Option<String>,
@@ -279,6 +295,7 @@ pub struct Settings {
     pub cursor_size: u32,
     pub tap_to_click: bool,
     pub natural_scroll: bool,
+    pub gestures: Gestures,
     pub decoration: Decoration,
     pub tiling: Tiling,
     pub effects: Effects,
@@ -310,6 +327,10 @@ fn boolean(values: &Values, key: &str) -> bool {
         "false" => Some(false),
         _ => None,
     })
+}
+
+fn gesture_action(values: &Values, key: &str) -> Option<Action> {
+    parsed(values, key, |text| bindings::parse_action(text).ok())
 }
 
 fn color(values: &Values, key: &str) -> Color {
@@ -483,6 +504,14 @@ impl Settings {
             cursor_size: int(values, "cursor-size", 0, 256) as u32,
             tap_to_click: boolean(values, "tap-to-click"),
             natural_scroll: boolean(values, "natural-scroll"),
+            gestures: Gestures {
+                fingers: int(values, "gesture-fingers", 3, 4) as u32,
+                threshold: int(values, "gesture-threshold", 20, 500) as f64,
+                left: gesture_action(values, "gesture-swipe-left"),
+                right: gesture_action(values, "gesture-swipe-right"),
+                up: gesture_action(values, "gesture-swipe-up"),
+                down: gesture_action(values, "gesture-swipe-down"),
+            },
             decoration: decoration_from(values),
             tiling: Tiling {
                 layout: choice(
