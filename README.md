@@ -43,7 +43,7 @@ slate [--backend auto|winit|udev|x11] [COMMAND [ARGUMENT...]]
 - `x11`: window manager for a running X server. Does not use Smithay.
 - `auto`: `winit` when `WAYLAND_DISPLAY` or `DISPLAY` is set, otherwise `udev`. The `x11` backend is never chosen automatically.
 
-Key bindings. Mod is Super, except in `winit` where it is Alt.
+Key bindings. Mod is Super, except in `winit` where it is Alt. The bindings below are the built in ones and can be changed, see Settings.
 
 | Keys | Action |
 | --- | --- |
@@ -51,6 +51,7 @@ Key bindings. Mod is Super, except in `winit` where it is Alt.
 | Mod+q | Close the focused window |
 | Mod+m | Toggle maximized |
 | Mod+f | Toggle fullscreen |
+| Mod+Tab, Mod+Shift+Tab | Focus the next or the previous window |
 | Mod+1 to Mod+9 | Switch to a workspace |
 | Mod+Shift+1 to Mod+Shift+9 | Move the focused window to a workspace |
 | Mod+Shift+e | Quit |
@@ -84,6 +85,24 @@ Settings are keys of the cfgd schema `org.nuros.sanar.slate`, path `/org/nuros/s
 cfgd set /org/nuros/sanar/slate/xkb-layout 'us,ru'
 cfgd set /org/nuros/sanar/slate/xkb-options 'grp:alt_shift_toggle'
 ```
+
+### Key bindings
+
+The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in bindings or replace the ones with the same combination. `COMBO=none` removes a binding. A combination is modifiers and a key joined by `+`. Modifiers are `Mod` (the modifier of `mod-key`), `Super`, `Alt`, `Ctrl` and `Shift`. The key is any xkb keysym name such as `Return`, `Tab`, `F5`, `Print`, `XF86AudioRaiseVolume` or a letter. Letters match the latin key of the layout, so bindings keep working on a non latin layout.
+
+| Action | Meaning |
+| --- | --- |
+| `terminal`, `close`, `maximize`, `fullscreen`, `quit` | As in the table above. |
+| `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
+| `workspace N`, `move-to-workspace N` | N from 1. |
+| `exec COMMAND [ARGUMENT...]` | Start a program, arguments are split at spaces. |
+| `none` | Only in `COMBO=none`, removes the binding. |
+
+```
+cfgd set /org/nuros/sanar/slate/bindings 'Mod+b=exec firefox;Mod+Return=exec foot -e fish;Mod+q=none;Ctrl+Alt+t=terminal'
+```
+
+Entries that cannot be parsed are logged and ignored.
 
 ### Window decorations
 
@@ -119,7 +138,6 @@ cfgd set /org/nuros/sanar/slate/button-layout 'close:maximize'
 ## Roadmap
 
 - Tiling layout as a setting, floating stays the default.
-- Configurable key bindings.
 - Decorations in the X11 backend, window shadows and a minimize button.
 - Text input and ext-image-copy-capture.
 

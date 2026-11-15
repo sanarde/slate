@@ -9,6 +9,7 @@ Source layout:
 
 - `src/main.rs`: argument parsing and backend choice.
 - `src/spawn.rs`: starting programs.
+- `src/bindings.rs`: parsing and matching of key bindings, shared by both backends.
 - `src/cfgd.rs` and `build.rs`: the binding to libcfgd. `src/config.rs`: the settings read through it, shared by both backends.
 - `src/wayland`: the Wayland compositor. `state.rs` holds the compositor state, `settings.rs` live changes of settings, `handlers` the protocol handlers, `decoration.rs` frame geometry, hit testing and interaction, `titlebar.rs` and `font.rs` drawing of the titlebar, `outputs.rs` the registry of outputs and applying a configuration, `output_management.rs` the wlr-output-management protocol, `screencopy.rs` the wlr-screencopy protocol, `lock.rs` the session lock, `scale.rs` the fractional scale, `shell.rs` window placement, focus and states, `grabs.rs` interactive move and resize, `input.rs` key bindings and pointer routing, `render.rs` and `cursor.rs` drawing, `winit.rs` and `udev.rs` the backends.
 - `src/x11`: the X11 window manager on x11rb, independent of the Wayland code.
