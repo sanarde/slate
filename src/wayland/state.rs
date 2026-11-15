@@ -47,6 +47,7 @@ use super::outputs::OutputRecord;
 use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::config::{ButtonKind, Settings};
+use crate::layout::WorkspaceLayout;
 use crate::source::ConfigSource;
 use crate::spawn;
 
@@ -67,6 +68,8 @@ pub struct Slate {
     pub parked: Vec<(Window, Point<i32, Logical>)>,
     pub workspace: usize,
     pub minimized: Vec<(Window, Point<i32, Logical>)>,
+    pub tile_order: Vec<Window>,
+    pub workspace_layouts: Vec<WorkspaceLayout>,
     pub outputs: Vec<OutputRecord>,
     pub output_management: OutputManagementState,
     pub screencopy: ScreencopyState,
@@ -162,6 +165,8 @@ impl Slate {
             parked: Vec::new(),
             workspace: 0,
             minimized: Vec::new(),
+            tile_order: Vec::new(),
+            workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); 9],
             outputs: Vec::new(),
             output_management: OutputManagementState::new(&display_handle),
             screencopy: ScreencopyState::new(&display_handle),

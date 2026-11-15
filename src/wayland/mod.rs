@@ -16,6 +16,7 @@ mod screencopy;
 mod settings;
 mod shell;
 mod state;
+mod tiling;
 mod titlebar;
 mod udev;
 mod winit;
