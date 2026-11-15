@@ -4,6 +4,7 @@ mod bindings;
 mod cfgd;
 mod conf;
 mod config;
+mod layout;
 mod scheme;
 mod source;
 mod spawn;
