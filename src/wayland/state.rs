@@ -39,7 +39,6 @@ use smithay::xwayland::X11Wm;
 
 use super::cursor::Cursors;
 use super::decoration::Hit;
-use super::font::Fonts;
 use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
 use super::output_management::OutputManagementState;
@@ -47,6 +46,7 @@ use super::outputs::OutputRecord;
 use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::config::{ButtonKind, Settings};
+use crate::font::Fonts;
 use crate::layout::WorkspaceLayout;
 use crate::source::ConfigSource;
 use crate::spawn;

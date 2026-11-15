@@ -19,7 +19,7 @@ use super::grabs::{self, Edges};
 use super::render::OutputElement;
 use super::shell;
 use super::state::Slate;
-use super::titlebar::{self, Params};
+use crate::titlebar::{self, Params};
 use crate::config::{ButtonKind, ClickAction, Color, DecorationMode, RuleMode};
 
 const BUTTON_LEFT: u32 = 0x110;

@@ -4,11 +4,13 @@ mod bindings;
 mod cfgd;
 mod conf;
 mod config;
+mod font;
 mod layout;
 mod scheme;
 mod source;
 mod spawn;
 mod themes;
+mod titlebar;
 mod wayland;
 mod x11;
 

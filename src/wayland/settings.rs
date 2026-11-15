@@ -9,11 +9,11 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 
 use super::cursor::Cursors;
-use super::font::Fonts;
 use super::handlers::decoration::reapply;
 use super::shell;
 use super::tiling;
 use super::state::{ModKey, Slate};
+use crate::font::Fonts;
 use crate::config::{ModKeySetting, Settings, Xkb};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);

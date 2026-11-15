@@ -2,7 +2,6 @@
 
 mod cursor;
 mod decoration;
-mod font;
 mod focus;
 mod grabs;
 mod handlers;
@@ -17,7 +16,6 @@ mod settings;
 mod shell;
 mod state;
 mod tiling;
-mod titlebar;
 mod udev;
 mod winit;
 
