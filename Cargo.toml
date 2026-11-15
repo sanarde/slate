@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-only
+
+[package]
+name = "slate"
+version = "0.1.0"
+edition = "2024"
+description = "Window manager of SanarDE for Wayland and X11"
+license = "GPL-3.0-only"
+
+[dependencies]
+smithay = { version = "0.7.0", default-features = false, features = [
+    "backend_winit",
+    "desktop",
+    "renderer_gl",
+    "wayland_frontend",
+] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
