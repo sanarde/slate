@@ -54,8 +54,8 @@ theme = material-you
 #corner-radius = 8
 #resize-margin = 4
 
-# LEFT:RIGHT lists of close and maximize.
-#button-layout = :maximize,close
+# LEFT:RIGHT lists of close, maximize and minimize.
+#button-layout = :minimize,maximize,close
 #button-size = 18
 #button-spacing = 6
 #button-margin = 8
@@ -66,7 +66,7 @@ theme = material-you
 #button-icon-color-focused = @on_primary_container
 #button-icon-color-unfocused = @on_surface_variant
 
-# none, maximize, fullscreen or close.
+# none, maximize, minimize, fullscreen or close.
 #titlebar-double-click = maximize
 #titlebar-middle-click = none
 #titlebar-right-click = none
@@ -92,7 +92,7 @@ theme = material-you
 # Key bindings ----------------------------------------------------------------------------------
 
 # These add to the built in bindings or replace the ones with the same combination.
-# Actions: terminal, close, maximize, fullscreen, quit, focus-next, focus-prev, workspace N,
+# Actions: terminal, close, maximize, minimize, restore, fullscreen, quit, focus-next, focus-prev, workspace N,
 # move-to-workspace N, exec COMMAND, none (removes a binding).
 #bind = Mod+d=exec rofi -show drun
 #bind = Mod+b=exec firefox

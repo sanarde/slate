@@ -63,6 +63,8 @@ Key bindings. Mod is Super, except in `winit` where it is Alt. The bindings belo
 | Mod+q | Close the focused window |
 | Mod+m | Toggle maximized |
 | Mod+f | Toggle fullscreen |
+| Mod+n | Minimize the focused window |
+| Mod+Shift+n | Restore the window that was minimized last |
 | Mod+Tab, Mod+Shift+Tab | Focus the next or the previous window |
 | Mod+1 to Mod+9 | Switch to a workspace |
 | Mod+Shift+1 to Mod+Shift+9 | Move the focused window to a workspace |
@@ -160,7 +162,7 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 
 | Action | Meaning |
 | --- | --- |
-| `terminal`, `close`, `maximize`, `fullscreen`, `quit` | As in the table above. |
+| `terminal`, `close`, `maximize`, `minimize`, `restore`, `fullscreen`, `quit` | As in the table above. `restore` brings back the window that was minimized last. |
 | `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
 | `workspace N`, `move-to-workspace N` | N from 1. |
 | `exec COMMAND [ARGUMENT...]` | Start a program, arguments are split at spaces. |
@@ -194,14 +196,14 @@ The Wayland backend draws titlebars and borders itself for windows that ask for 
 | `title-padding` | 12 | Space between the title and the buttons or the edge. |
 | `corner-radius` | 8 | Radius of the upper corners. |
 | `resize-margin` | 4 | Invisible resize area outside the frame. |
-| `button-layout` | `:maximize,close` | `LEFT:RIGHT` lists of `close` and `maximize`. |
+| `button-layout` | `:minimize,maximize,close` | `LEFT:RIGHT` lists of `close`, `maximize` and `minimize`. |
 | `button-size`, `button-spacing`, `button-margin` | 18, 6, 8 | Pixels. |
 | `button-shape` | `circle` | `circle`, `rounded` or `square`. |
 | `button-color`, `button-hover-color`, `button-close-hover-color` | `#00000000`, `#ffffff33`, `#e5484d` | Button backgrounds. |
 | `button-icon-color-focused`, `button-icon-color-unfocused` | `#ffffff`, `#cac4d0` | Icon colors. |
-| `titlebar-double-click`, `titlebar-middle-click`, `titlebar-right-click` | `maximize`, `none`, `none` | `none`, `maximize`, `fullscreen` or `close`. |
+| `titlebar-double-click`, `titlebar-middle-click`, `titlebar-right-click` | `maximize`, `none`, `none` | `none`, `maximize`, `minimize`, `fullscreen` or `close`. |
 
-Dragging the titlebar moves a window and dragging the frame or the margin resizes it.
+Dragging the titlebar moves a window and dragging the frame or the margin resizes it. A minimized window is hidden until it is restored with the `restore` binding, by a request of the application or, on X11, by a pager that activates it. Slate has no taskbar of its own.
 
 ```
 rule = foot=none
