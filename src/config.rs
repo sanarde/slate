@@ -16,6 +16,19 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("tiling-outer-gap", "8"),
     ("master-ratio", "55"),
     ("master-count", "1"),
+    ("shadow-size", "18"),
+    ("shadow-offset-x", "0"),
+    ("shadow-offset-y", "6"),
+    ("shadow-color-focused", "#00000073"),
+    ("shadow-color-unfocused", "#00000040"),
+    ("shadow-tiled", "false"),
+    ("animations", "true"),
+    ("animation-duration", "200"),
+    ("animation-curve", "ease-out"),
+    ("animate-open", "true"),
+    ("animate-move", "true"),
+    ("animate-workspace", "true"),
+    ("animation-open-scale", "94"),
     ("mod-key", "auto"),
     ("terminal", ""),
     ("workspace-count", "9"),
@@ -177,6 +190,30 @@ pub struct Tiling {
     pub floating_rules: Vec<String>,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Curve {
+    Linear,
+    EaseOut,
+    EaseInOut,
+    Overshoot,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Effects {
+    pub shadow_size: i32,
+    pub shadow_offset: (i32, i32),
+    pub shadow_color_focused: Color,
+    pub shadow_color_unfocused: Color,
+    pub shadow_tiled: bool,
+    pub animations: bool,
+    pub duration_ms: u64,
+    pub curve: Curve,
+    pub animate_open: bool,
+    pub animate_move: bool,
+    pub animate_workspace: bool,
+    pub open_scale: f32,
+}
+
 #[derive(Clone, Default, PartialEq)]
 pub struct Xkb {
     pub rules: String,
@@ -234,6 +271,7 @@ pub struct Settings {
     pub natural_scroll: bool,
     pub decoration: Decoration,
     pub tiling: Tiling,
+    pub effects: Effects,
     pub bindings: Vec<Binding>,
 }
 
@@ -448,6 +486,32 @@ impl Settings {
                 master_ratio: int(values, "master-ratio", 10, 90) as f32 / 100.0,
                 master_count: int(values, "master-count", 1, 8) as usize,
                 floating_rules: values.lists.get("floating-rules").cloned().unwrap_or_default(),
+            },
+            effects: Effects {
+                shadow_size: int(values, "shadow-size", 0, 128) as i32,
+                shadow_offset: (
+                    int(values, "shadow-offset-x", -64, 64) as i32,
+                    int(values, "shadow-offset-y", -64, 64) as i32,
+                ),
+                shadow_color_focused: color(values, "shadow-color-focused"),
+                shadow_color_unfocused: color(values, "shadow-color-unfocused"),
+                shadow_tiled: boolean(values, "shadow-tiled"),
+                animations: boolean(values, "animations"),
+                duration_ms: int(values, "animation-duration", 0, 2000) as u64,
+                curve: choice(
+                    values,
+                    "animation-curve",
+                    &[
+                        ("linear", Curve::Linear),
+                        ("ease-out", Curve::EaseOut),
+                        ("ease-in-out", Curve::EaseInOut),
+                        ("overshoot", Curve::Overshoot),
+                    ],
+                ),
+                animate_open: boolean(values, "animate-open"),
+                animate_move: boolean(values, "animate-move"),
+                animate_workspace: boolean(values, "animate-workspace"),
+                open_scale: int(values, "animation-open-scale", 50, 100) as f32 / 100.0,
             },
             bindings: bindings::parse(values.lists.get("bindings").map(Vec::as_slice).unwrap_or_default()),
         }
