@@ -39,7 +39,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("title-padding", "12"),
     ("corner-radius", "8"),
     ("resize-margin", "4"),
-    ("button-layout", ":maximize,close"),
+    ("button-layout", ":minimize,maximize,close"),
     ("button-size", "18"),
     ("button-spacing", "6"),
     ("button-margin", "8"),
@@ -149,12 +149,14 @@ pub enum ButtonShape {
 pub enum ButtonKind {
     Close,
     Maximize,
+    Minimize,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ClickAction {
     None,
     Maximize,
+    Minimize,
     Fullscreen,
     Close,
 }
@@ -272,6 +274,7 @@ fn buttons(layout: &str) -> (Vec<ButtonKind>, Vec<ButtonKind>) {
             .filter_map(|item| match item.trim() {
                 "close" => Some(ButtonKind::Close),
                 "maximize" => Some(ButtonKind::Maximize),
+                "minimize" => Some(ButtonKind::Minimize),
                 "" => None,
                 other => {
                     tracing::warn!(button = other, "ignoring an unknown titlebar button");
@@ -311,6 +314,7 @@ fn decoration_from(values: &Values) -> Decoration {
     let actions = [
         ("none", ClickAction::None),
         ("maximize", ClickAction::Maximize),
+        ("minimize", ClickAction::Minimize),
         ("fullscreen", ClickAction::Fullscreen),
         ("close", ClickAction::Close),
     ];

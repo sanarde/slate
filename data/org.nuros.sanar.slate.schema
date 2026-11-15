@@ -188,8 +188,8 @@ summary = Width of the invisible area outside the frame that resizes the window 
 
 [button-layout]
 type = s
-default = :maximize,close
-summary = Titlebar buttons as LEFT:RIGHT lists of close and maximize, for example close:maximize, Wayland only
+default = :minimize,maximize,close
+summary = Titlebar buttons as LEFT:RIGHT lists of close, maximize and minimize, for example close:minimize,maximize, Wayland only
 
 [button-size]
 type = i
@@ -246,19 +246,19 @@ summary = Button icon color in the other windows, Wayland only
 [titlebar-double-click]
 type = s
 default = maximize
-choices = none; maximize; fullscreen; close
+choices = none; maximize; minimize; fullscreen; close
 summary = Action of a double click on the titlebar, Wayland only
 
 [titlebar-middle-click]
 type = s
 default = none
-choices = none; maximize; fullscreen; close
+choices = none; maximize; minimize; fullscreen; close
 summary = Action of a middle click on the titlebar, Wayland only
 
 [titlebar-right-click]
 type = s
 default = none
-choices = none; maximize; fullscreen; close
+choices = none; maximize; minimize; fullscreen; close
 summary = Action of a right click on the titlebar, Wayland only
 
 [bindings]
