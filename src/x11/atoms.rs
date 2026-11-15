@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+x11rb::atom_manager! {
+    pub Atoms: AtomsCookie {
+        UTF8_STRING,
+        WM_PROTOCOLS,
+        WM_DELETE_WINDOW,
+        WM_TAKE_FOCUS,
+        _NET_SUPPORTED,
+        _NET_SUPPORTING_WM_CHECK,
+        _NET_WM_NAME,
+        _NET_CLIENT_LIST,
+        _NET_ACTIVE_WINDOW,
+        _NET_NUMBER_OF_DESKTOPS,
+        _NET_CURRENT_DESKTOP,
+        _NET_DESKTOP_GEOMETRY,
+        _NET_WORKAREA,
+        _NET_CLOSE_WINDOW,
+        _NET_WM_STATE,
+        _NET_WM_STATE_FULLSCREEN,
+        _NET_WM_STATE_MAXIMIZED_VERT,
+        _NET_WM_STATE_MAXIMIZED_HORZ,
+        _NET_WM_STRUT,
+        _NET_WM_STRUT_PARTIAL,
+        _NET_WM_WINDOW_TYPE,
+        _NET_WM_WINDOW_TYPE_DOCK,
+        _NET_WM_WINDOW_TYPE_DESKTOP,
+        _NET_WM_WINDOW_TYPE_NOTIFICATION,
+        _NET_WM_WINDOW_TYPE_TOOLTIP,
+        _NET_WM_WINDOW_TYPE_MENU,
+        _NET_WM_WINDOW_TYPE_DROPDOWN_MENU,
+        _NET_WM_WINDOW_TYPE_POPUP_MENU,
+        _NET_WM_WINDOW_TYPE_COMBO,
+        _NET_WM_WINDOW_TYPE_DND,
+    }
+}
