@@ -44,6 +44,9 @@ pub enum Action {
     Promote,
     SwapNext,
     SwapPrevious,
+    Scratchpad(String),
+    Reload,
+    Restart,
     Exec(Vec<String>),
 }
 
@@ -208,6 +211,14 @@ pub fn parse_action(text: &str) -> Result<Option<Action>, String> {
         "restore" => Action::RestoreMinimized,
         "fullscreen" => Action::Fullscreen,
         "quit" => Action::Quit,
+        "reload" => Action::Reload,
+        "restart" => Action::Restart,
+        "scratchpad" => {
+            if argument.is_empty() {
+                return Err("scratchpad needs a name".to_string());
+            }
+            Action::Scratchpad(argument.to_string())
+        }
         "focus-next" => Action::FocusNext,
         "focus-prev" => Action::FocusPrevious,
         "toggle-tiling" => Action::ToggleTiling,

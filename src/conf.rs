@@ -27,6 +27,18 @@ impl Layer {
     }
 }
 
+fn alias(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "bind" => "bindings",
+        "rule" => "decoration-rules",
+        "float" => "floating-rules",
+        "window" => "window-rules",
+        "scratchpad" => "scratchpads",
+        "exec-once" => "exec-once",
+        _ => return None,
+    })
+}
+
 fn strip_comment(line: &str) -> &str {
     let bytes = line.as_bytes();
     for (index, byte) in bytes.iter().enumerate() {
@@ -111,12 +123,7 @@ pub fn read_text(layer: &mut Layer, text: &str, origin: &str, base: Option<&Path
             include(layer, value, &location, base, depth);
         } else if let Some(name) = key.strip_prefix('$') {
             layer.vars.insert(name.to_string(), value.to_string());
-        } else if key == "bind" || key == "rule" || key == "float" {
-            let list = match key {
-                "bind" => "bindings",
-                "rule" => "decoration-rules",
-                _ => "floating-rules",
-            };
+        } else if let Some(list) = alias(key) {
             layer.lists.entry(list.to_string()).or_default().push(value.to_string());
         } else if LIST_KEYS.contains(&key) {
             let entries = value.split(';').map(str::trim).filter(|entry| !entry.is_empty());

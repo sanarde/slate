@@ -128,6 +128,9 @@ pub(super) fn run(state: &mut Slate, action: Action) {
             }
         }
         Action::Quit => state.loop_signal.stop(),
+        Action::Scratchpad(name) => shell::toggle_scratchpad(state, &name),
+        Action::Reload => state.reload_settings(),
+        Action::Restart => tracing::warn!("restart is only supported by the X11 backend"),
         Action::Workspace(index) => shell::switch_workspace(state, index),
         Action::MoveToWorkspace(index) => {
             if let Some(window) = shell::focused_window(state) {

@@ -233,7 +233,14 @@ impl Slate {
     }
 
     pub fn spawn(&self, command: &[String]) {
-        let mut envs = vec![("WAYLAND_DISPLAY", self.socket_name.clone())];
+        spawn::spawn(command, &self.spawn_environment());
+    }
+
+    pub fn spawn_environment(&self) -> Vec<(&'static str, OsString)> {
+        let mut envs = vec![
+            ("WAYLAND_DISPLAY", self.socket_name.clone()),
+            ("XDG_SESSION_TYPE", OsString::from("wayland")),
+        ];
         if let Some(number) = self.xdisplay {
             envs.push(("DISPLAY", OsString::from(format!(":{number}"))));
         }
@@ -246,7 +253,7 @@ impl Slate {
         if self.settings.cursor_size > 0 {
             envs.push(("XCURSOR_SIZE", OsString::from(self.settings.cursor_size.to_string())));
         }
-        spawn::spawn(command, &envs);
+        envs
     }
 
     pub fn send_frames(&self, output: &Output) {

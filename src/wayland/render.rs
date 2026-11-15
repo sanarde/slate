@@ -122,7 +122,8 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
         let content = state.space.element_geometry(window);
         let frame = decoration::frame_rect(state, window).or(content);
         let effect = frame.and_then(|frame| animation::effect_for(state, window, frame));
-        let alpha = effect.as_ref().map_or(1.0, |effect| effect.alpha);
+        let applied = shell::rule_of(window);
+        let alpha = effect.as_ref().map_or(1.0, |effect| effect.alpha) * applied.opacity.unwrap_or(1.0);
 
         let mut group: Vec<OutputElement> = Vec::new();
         if let Some(location) = state.space.element_location(window) {
@@ -147,7 +148,8 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
         ));
 
         let (maximized, fullscreen) = shell::flags(window);
-        let shadow_wanted = decoration::framed(state, window)
+        let shadow_wanted = !applied.no_shadow
+            && decoration::framed(state, window)
             && !maximized
             && !fullscreen
             && (state.settings.effects.shadow_tiled || !tiling::is_tiled(window));

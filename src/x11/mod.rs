@@ -18,7 +18,9 @@ pub fn run(command: &[String], settings: Settings, config: ConfigSource) -> Resu
     let mut wm = wm::Wm::new(conn, screen_num, settings, config)?;
 
     tracing::info!("managing the X11 display");
-    spawn::spawn(command, &[]);
+    let envs = wm.environment();
+    spawn::spawn(command, &envs);
+    crate::session::start(wm.settings(), &envs, true);
 
     wm.run()
 }

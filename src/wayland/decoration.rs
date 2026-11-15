@@ -112,6 +112,9 @@ pub fn negotiated_mode(state: &Slate, app_id: &str, requested: Option<XdgMode>) 
 }
 
 pub fn framed(state: &Slate, window: &Window) -> bool {
+    if super::shell::rule_of(window).no_decoration {
+        return false;
+    }
     let rule = rule_for(state, &app_id(window));
     if rule == Some(RuleMode::None) {
         return false;

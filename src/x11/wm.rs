@@ -32,6 +32,7 @@ use crate::ipc::Ipc;
 use crate::layout::WorkspaceLayout;
 use crate::config::{ButtonKind, ModKeySetting, Settings};
 use crate::source::ConfigSource;
+use crate::rules::{self, Applied, Position};
 use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
@@ -82,6 +83,7 @@ struct Client {
     title: String,
     painted: Option<frame::Painted>,
     shaped: Option<(i32, i32, i32)>,
+    rule: Applied,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -129,6 +131,7 @@ pub struct Wm {
     paint_generation: u64,
     ipc: Option<Ipc>,
     last_focus: Option<u64>,
+    adopting: bool,
     running: bool,
 }
 
@@ -142,9 +145,18 @@ impl Wm {
             | EventMask::SUBSTRUCTURE_NOTIFY
             | EventMask::PROPERTY_CHANGE
             | EventMask::BUTTON_PRESS;
-        conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().event_mask(redirect))?
+        let mut attempts = 0;
+        while conn
+            .change_window_attributes(root, &ChangeWindowAttributesAux::new().event_mask(redirect))?
             .check()
-            .map_err(|_| "another window manager is running")?;
+            .is_err()
+        {
+            attempts += 1;
+            if attempts > 20 {
+                return Err("another window manager is running".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
 
         let atoms = Atoms::new(&conn)?.reply()?;
         let depth = conn.setup().roots[screen_num].root_depth;
@@ -184,9 +196,11 @@ impl Wm {
             paint_generation: 0,
             ipc: Ipc::start(),
             last_focus: None,
+            adopting: false,
             running: true,
         };
 
+        wm.workspace = wm.inherited_workspace();
         wm.set_cursor()?;
         wm.create_cursors()?;
         wm.publish_root_properties()?;
@@ -197,6 +211,19 @@ impl Wm {
         wm.adopt_existing()?;
         wm.conn.flush()?;
         Ok(wm)
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn environment(&self) -> Vec<(&'static str, std::ffi::OsString)> {
+        let mut envs = Vec::new();
+        if let Some(ipc) = &self.ipc {
+            envs.push(("SLATE_SOCKET", ipc.path().as_os_str().to_owned()));
+        }
+        envs.push(("XDG_SESSION_TYPE", "x11".into()));
+        envs
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -416,7 +443,7 @@ impl Wm {
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[self.settings.workspace_count as u32])?;
         self.conn
-            .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[0])?;
+            .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[self.workspace as u32])?;
         self.conn.change_property32(
             PropMode::REPLACE,
             self.root,
@@ -573,14 +600,50 @@ impl Wm {
             .unwrap_or(0)
     }
 
+    fn inherited_workspace(&self) -> usize {
+        let desktop = self
+            .conn
+            .get_property(false, self.root, self.atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, 0, 1)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .and_then(|reply| reply.value32().and_then(|mut values| values.next()));
+        desktop
+            .map(|desktop| desktop as usize)
+            .filter(|desktop| *desktop < self.settings.workspace_count)
+            .unwrap_or(0)
+    }
+
+    fn desktop_of(&self, window: Window) -> Option<u32> {
+        self.conn
+            .get_property(false, window, self.atoms._NET_WM_DESKTOP, AtomEnum::CARDINAL, 0, 1)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .and_then(|reply| reply.value32().and_then(|mut values| values.next()))
+    }
+
     fn adopt_existing(&mut self) -> Result<()> {
         let tree = self.conn.query_tree(self.root)?.reply()?;
+        let mut moves = Vec::new();
+        self.adopting = true;
         for window in tree.children {
             let attributes = self.conn.get_window_attributes(window)?.reply()?;
             if attributes.override_redirect || attributes.map_state != MapState::VIEWABLE {
                 continue;
             }
+            let desktop = self.desktop_of(window);
             self.map_request(window)?;
+            if let Some(desktop) = desktop
+                && self.clients.iter().any(|client| client.window == window)
+            {
+                moves.push((window, desktop as usize));
+            }
+        }
+        self.adopting = false;
+
+        for (window, desktop) in moves {
+            if desktop < self.settings.workspace_count && desktop != self.workspace {
+                self.move_to_workspace(window, desktop)?;
+            }
         }
         Ok(())
     }
@@ -722,10 +785,18 @@ impl Wm {
         };
         let max_w = area.w.saturating_sub(2 * border).max(MIN_SIZE);
         let max_h = area.h.saturating_sub(2 * border + title).max(MIN_SIZE);
-        let w = (geometry.width as u32).clamp(MIN_SIZE, max_w);
-        let h = (geometry.height as u32).clamp(MIN_SIZE, max_h);
+        let applied = rules::apply(&self.settings.window_rules, &self.class_of(window), &self.read_title(window));
+        let fresh = !self.adopting;
+        let (wanted_w, wanted_h) = match applied.size {
+            Some((width, height)) if fresh => (width, height),
+            _ => (geometry.width as u32, geometry.height as u32),
+        };
+        let w = wanted_w.clamp(MIN_SIZE, max_w);
+        let h = wanted_h.clamp(MIN_SIZE, max_h);
 
-        let (x, y) = if geometry.x == 0 && geometry.y == 0 {
+        let (x, y) = if let (Some(Position::At(px, py)), true) = (applied.position, fresh) {
+            (area.x + px + border as i32, area.y + py + (border + title) as i32)
+        } else if (geometry.x == 0 && geometry.y == 0) || (fresh && applied.position == Some(Position::Center)) {
             (
                 area.x + ((area.w.saturating_sub(w)) / 2) as i32,
                 area.y + ((area.h.saturating_sub(h)) / 2) as i32,
@@ -770,19 +841,30 @@ impl Wm {
             float_rect: None,
             pending_unmaps: 0,
             accepts_input,
-            above: initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
+            above: applied.above || initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
             frame: None,
             title: String::new(),
             painted: None,
             shaped: None,
+            rule: applied.clone(),
         });
+        let desktop = if applied.sticky { u32::MAX } else { self.workspace as u32 };
         self.conn.change_property32(
             PropMode::REPLACE,
             window,
             self.atoms._NET_WM_DESKTOP,
             AtomEnum::CARDINAL,
-            &[self.workspace as u32],
+            &[desktop],
         )?;
+        if let Some(opacity) = applied.opacity {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                window,
+                self.atoms._NET_WM_WINDOW_OPACITY,
+                AtomEnum::CARDINAL,
+                &[(f64::from(opacity) * f64::from(u32::MAX)) as u32],
+            )?;
+        }
         self.frame_client(window, mapped)?;
         if self.clients.iter().any(|client| client.window == window && client.frame.is_none()) {
             self.set_geometry(window, rect, border)?;
@@ -790,17 +872,104 @@ impl Wm {
         self.map_client(window)?;
         self.update_client_list()?;
         self.register_tiled(window);
+        let forced = applied.floating.or((applied.sticky || applied.scratchpad.is_some()).then_some(true));
+        if let (Some(floating), Some(client)) = (forced, self.clients.iter_mut().find(|client| client.window == window)) {
+            client.floating = floating;
+        }
         self.focus(window)?;
 
-        let fullscreen = initial_state.contains(&self.atoms._NET_WM_STATE_FULLSCREEN);
-        let maximized = initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
-            && initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_HORZ);
+        let fullscreen = initial_state.contains(&self.atoms._NET_WM_STATE_FULLSCREEN) || (fresh && applied.fullscreen);
+        let maximized = (initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
+            && initial_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_HORZ))
+            || (fresh && applied.maximize);
         if fullscreen || maximized {
             self.set_state(window, Some(maximized), Some(fullscreen))?;
         }
         self.arrange()?;
         self.window_event("window-open", window);
-        self.restack()
+        self.restack()?;
+
+        if fresh
+            && !applied.sticky
+            && let Some(target) = applied.workspace.filter(|target| *target < self.settings.workspace_count)
+            && target != self.workspace
+        {
+            self.move_to_workspace(window, target)?;
+        }
+        Ok(())
+    }
+
+    fn toggle_scratchpad(&mut self, name: &str) -> Result<()> {
+        let current = self.workspace;
+        let found = self
+            .clients
+            .iter()
+            .find(|client| client.rule.scratchpad.as_deref() == Some(name))
+            .map(|client| (client.window, client.minimized, client.hidden));
+
+        match found {
+            Some((window, false, false)) => {
+                if self.focused == Some(window) {
+                    self.minimize(window)
+                } else {
+                    self.focus(window)
+                }
+            }
+            Some((window, true, _)) => {
+                if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
+                    client.workspace = current;
+                }
+                self.restore(window)
+            }
+            Some((window, false, true)) => {
+                if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
+                    client.workspace = current;
+                }
+                self.conn.change_property32(
+                    PropMode::REPLACE,
+                    window,
+                    self.atoms._NET_WM_DESKTOP,
+                    AtomEnum::CARDINAL,
+                    &[current as u32],
+                )?;
+                self.sync_frame(window)?;
+                self.set_hidden(window, false);
+                self.map_client(window)?;
+                self.arrange()?;
+                self.focus(window)
+            }
+            None => {
+                match self.settings.scratchpads.iter().find(|(pad, _)| pad == name) {
+                    Some((_, command)) => spawn::spawn(command, &[]),
+                    None => tracing::warn!(name, "no scratchpad with this name"),
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn restart(&mut self) -> Result<()> {
+        let clients: Vec<(Window, Option<Window>, Rect)> = self
+            .clients
+            .iter()
+            .map(|client| (client.window, client.frame, client.rect))
+            .collect();
+        for (window, frame, rect) in clients {
+            if let Some(frame) = frame {
+                self.conn.reparent_window(window, self.root, rect.x as i16, rect.y as i16)?;
+                self.conn.destroy_window(frame)?;
+            }
+            self.conn.map_window(window)?;
+        }
+        self.conn.flush()?;
+
+        let executable = std::env::current_exe()?;
+        let error = std::os::unix::process::CommandExt::exec(
+            std::process::Command::new(executable)
+                .args(std::env::args_os().skip(1))
+                .env("SLATE_RESTARTED", "1"),
+        );
+        Err(error.into())
     }
 
     fn unmapped(&mut self, window: Window) -> Result<()> {
@@ -818,6 +987,9 @@ impl Wm {
             return Ok(());
         }
         self.workspace = target;
+        for client in self.clients.iter_mut().filter(|client| client.rule.sticky) {
+            client.workspace = target;
+        }
 
         let changes: Vec<(Window, bool)> = self
             .clients
@@ -871,6 +1043,9 @@ impl Wm {
         let Some(client) = self.clients.iter_mut().find(|client| client.window == window) else {
             return Ok(());
         };
+        if client.rule.sticky {
+            return Ok(());
+        }
         client.workspace = target;
         self.conn.change_property32(
             PropMode::REPLACE,
@@ -1396,6 +1571,9 @@ impl Wm {
                 }
             }
             Action::Quit => self.running = false,
+            Action::Reload => self.reload_settings()?,
+            Action::Restart => self.restart()?,
+            Action::Scratchpad(name) => self.toggle_scratchpad(&name)?,
             Action::Workspace(index) => self.switch_workspace(index)?,
             Action::MoveToWorkspace(index) => {
                 if let Some(window) = focused {

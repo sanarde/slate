@@ -380,3 +380,28 @@ default = 94
 min = 50
 max = 100
 summary = Size in percent that a window starts from when it opens, Wayland only
+
+[window-rules]
+type = as
+default =
+summary = Per window rules as CONDITIONS => ACTIONS, conditions are app_id=GLOB, title=GLOB and title~=TEXT, actions are float, tile, workspace N, size WxH, position X,Y or center, above, sticky, fullscreen, maximize, opacity V, no-shadow, no-decoration and scratchpad NAME
+
+[scratchpads]
+type = as
+default =
+summary = Named drop down windows as NAME=COMMAND, toggled with the scratchpad action
+
+[exec-once]
+type = as
+default =
+summary = Commands started once when the session starts
+
+[xdg-autostart]
+type = b
+default = false
+summary = Also start the applications listed in the XDG autostart directories
+
+[session-environment]
+type = b
+default = true
+summary = Export the display variables to the D-Bus and systemd user environments so that services find the session

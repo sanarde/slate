@@ -54,7 +54,7 @@ pub fn watch(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Resul
 }
 
 impl Slate {
-    fn reload_settings(&mut self) {
+    pub(super) fn reload_settings(&mut self) {
         if self.config.changed() {
             let settings = self.config.settings();
             self.apply_settings(settings);

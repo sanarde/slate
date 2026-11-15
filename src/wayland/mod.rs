@@ -61,6 +61,7 @@ pub fn run(
 
     tracing::info!(socket = ?state.socket_name, "listening on Wayland socket");
     state.spawn(command);
+    crate::session::start(&state.settings, &state.spawn_environment(), backend == Backend::Udev);
 
     event_loop.run(None, &mut state, dispatch_idle)?;
     Ok(())

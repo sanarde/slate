@@ -15,6 +15,7 @@ x11rb::atom_manager! {
         _NET_NUMBER_OF_DESKTOPS,
         _NET_CURRENT_DESKTOP,
         _NET_WM_DESKTOP,
+        _NET_WM_WINDOW_OPACITY,
         _NET_DESKTOP_GEOMETRY,
         _NET_WORKAREA,
         _NET_CLOSE_WINDOW,

@@ -24,6 +24,7 @@ use super::ipc;
 use super::scale;
 use super::tiling;
 use super::state::Slate;
+use crate::rules::{self, Applied, Position};
 
 #[derive(Default)]
 pub(super) struct WindowState {
@@ -35,6 +36,7 @@ pub(super) struct WindowState {
     pub(super) tiled: bool,
     pub(super) float_rect: Option<Rectangle<i32, Logical>>,
     pub(super) id: u64,
+    pub(super) rule: Applied,
 }
 
 pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> {
@@ -67,27 +69,51 @@ pub fn map_window(state: &mut Slate, window: Window) {
 }
 
 fn place_window(state: &mut Slate, window: Window) {
+    let applied = rules::apply(
+        &state.settings.window_rules,
+        &decoration::app_id(&window),
+        &decoration::title(&window),
+    );
+    let target = applied.workspace.filter(|index| *index < state.settings.workspace_count);
     let workspace = state.workspace;
     state.next_window_id += 1;
     let id = state.next_window_id;
     with_window_state(&window, |window_state| {
         window_state.workspace = workspace;
         window_state.id = id;
+        window_state.rule = applied.clone();
     });
-    let size = window.geometry().size;
+
+    let mut size = window.geometry().size;
+    if let Some((width, height)) = applied.size {
+        let width = i32::try_from(width).unwrap_or(i32::MAX);
+        let height = i32::try_from(height).unwrap_or(i32::MAX);
+        size = (width, height).into();
+        if let Some(toplevel) = window.toplevel() {
+            toplevel.with_pending_state(|pending| pending.size = Some(size));
+            toplevel.send_pending_configure();
+        }
+    }
     let insets = decoration::insets(state, &window);
     let frame_width = size.w + insets.left + insets.right;
     let frame_height = size.h + insets.top + insets.bottom;
     let zone = active_zone(state);
-    let location = Point::from((
-        zone.loc.x + ((zone.size.w - frame_width) / 2).max(0) + insets.left,
-        zone.loc.y + ((zone.size.h - frame_height) / 2).max(0) + insets.top,
-    ));
+    let location = match applied.position {
+        Some(Position::At(x, y)) => Point::from((zone.loc.x + x + insets.left, zone.loc.y + y + insets.top)),
+        _ => Point::from((
+            zone.loc.x + ((zone.size.w - frame_width) / 2).max(0) + insets.left,
+            zone.loc.y + ((zone.size.h - frame_height) / 2).max(0) + insets.top,
+        )),
+    };
 
     if let Some(surface) = window.x11_surface() {
         let _ = surface.configure(Rectangle::new(location, size));
     }
     tiling::register(state, &window);
+    let forced = applied.floating.or((applied.sticky || applied.scratchpad.is_some()).then_some(true));
+    if let Some(floating) = forced {
+        with_window_state(&window, |window_state| window_state.floating = floating);
+    }
     state.space.map_element(window.clone(), location, false);
     scale::update(state);
     ipc::window_event(state, "window-open", &window);
@@ -95,6 +121,66 @@ fn place_window(state: &mut Slate, window: Window) {
     tiling::arrange(state);
     animation::start_open(state, &window);
     foreign_toplevel::refresh(state);
+
+    if applied.fullscreen {
+        set_fullscreen(state, &window, true);
+    } else if applied.maximize {
+        set_maximized(state, &window, true);
+    }
+    if let Some(target) = target
+        && target != workspace
+        && !applied.sticky
+    {
+        move_to_workspace(state, &window, target);
+    }
+}
+
+pub fn rule_of(window: &Window) -> Applied {
+    with_window_state(window, |window_state| window_state.rule.clone())
+}
+
+pub fn toggle_scratchpad(state: &mut Slate, name: &str) {
+    let belongs = |window: &Window| rule_of(window).scratchpad.as_deref() == Some(name);
+    let current = state.workspace;
+
+    let visible = state.space.elements().find(|window| belongs(window)).cloned();
+    if let Some(window) = visible {
+        if focused_window(state).as_ref() == Some(&window) {
+            minimize_window(state, &window);
+        } else {
+            focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+        }
+        return;
+    }
+
+    if let Some(index) = state.parked.iter().position(|(window, _)| belongs(window)) {
+        let (window, location) = state.parked.remove(index);
+        with_window_state(&window, |window_state| window_state.workspace = current);
+        state.space.map_element(window.clone(), location, true);
+        focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+        tiling::arrange(state);
+        animation::start_open(state, &window);
+        foreign_toplevel::refresh(state);
+        return;
+    }
+
+    if let Some(window) = state
+        .minimized
+        .iter()
+        .map(|(window, _)| window)
+        .find(|window| belongs(window))
+        .cloned()
+    {
+        with_window_state(&window, |window_state| window_state.workspace = current);
+        restore_window(state, &window);
+        return;
+    }
+
+    if let Some((_, command)) = state.settings.scratchpads.iter().find(|(pad, _)| pad == name).cloned() {
+        state.spawn(&command);
+    } else {
+        tracing::warn!(name, "no scratchpad with this name");
+    }
 }
 
 pub fn unmap_window(state: &mut Slate, window: &Window) {
@@ -121,6 +207,15 @@ pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) 
     }
     if let Some(window) = window {
         state.space.raise_element(window, true);
+        let above: Vec<Window> = state
+            .space
+            .elements()
+            .filter(|candidate| rule_of(candidate).above)
+            .cloned()
+            .collect();
+        for raised in above {
+            state.space.raise_element(&raised, false);
+        }
         if let (Some(surface), Some(xwm)) = (window.x11_surface(), state.xwm.as_mut()) {
             let _ = xwm.raise_window(surface);
         }
@@ -167,9 +262,18 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
     let leaving: Vec<Window> = state
         .space
         .elements()
-        .filter(|window| !is_override_redirect(window))
+        .filter(|window| !is_override_redirect(window) && !rule_of(window).sticky)
         .cloned()
         .collect();
+    let carried: Vec<Window> = state
+        .space
+        .elements()
+        .filter(|window| !is_override_redirect(window) && rule_of(window).sticky)
+        .cloned()
+        .collect();
+    for window in carried {
+        with_window_state(&window, |window_state| window_state.workspace = target);
+    }
     for window in leaving {
         if let Some(location) = state.space.element_location(&window) {
             state.parked.push((window.clone(), location));
@@ -232,7 +336,7 @@ pub fn clamp_workspaces(state: &mut Slate) {
 }
 
 pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
-    if target >= state.settings.workspace_count {
+    if target >= state.settings.workspace_count || rule_of(window).sticky {
         return;
     }
     with_window_state(window, |window_state| window_state.workspace = target);

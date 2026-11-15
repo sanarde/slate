@@ -65,6 +65,9 @@ impl Wm {
             return false;
         }
         let class = self.class_of(window);
+        if crate::rules::apply(&self.settings.window_rules, &class, &self.read_title(window)).no_decoration {
+            return false;
+        }
         if matches!(
             decoration.rules.iter().find(|(candidate, _)| *candidate == class),
             Some((_, RuleMode::Client | RuleMode::None))

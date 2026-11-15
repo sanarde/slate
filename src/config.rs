@@ -4,9 +4,17 @@ use std::collections::HashMap;
 
 use crate::bindings::{self, Binding};
 use crate::layout::Layout;
+use crate::rules::{self, Rule};
 
 pub const PREFIX: &str = "/org/nuros/sanar/slate/";
-pub const LIST_KEYS: [&str; 3] = ["bindings", "decoration-rules", "floating-rules"];
+pub const LIST_KEYS: [&str; 6] = [
+    "bindings",
+    "decoration-rules",
+    "floating-rules",
+    "window-rules",
+    "scratchpads",
+    "exec-once",
+];
 
 pub const DEFAULTS: &[(&str, &str)] = &[
     ("theme", "material-you"),
@@ -46,6 +54,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("cursor-size", "0"),
     ("tap-to-click", "true"),
     ("natural-scroll", "false"),
+    ("xdg-autostart", "false"),
+    ("session-environment", "true"),
     ("decoration-mode", "server"),
     ("titlebar-height", "30"),
     ("titlebar-color-focused", "#6750a4"),
@@ -273,6 +283,11 @@ pub struct Settings {
     pub tiling: Tiling,
     pub effects: Effects,
     pub bindings: Vec<Binding>,
+    pub window_rules: Vec<Rule>,
+    pub scratchpads: Vec<(String, Vec<String>)>,
+    pub exec_once: Vec<Vec<String>>,
+    pub xdg_autostart: bool,
+    pub session_environment: bool,
 }
 
 fn parsed<T>(values: &Values, key: &str, parse: impl Fn(&str) -> Option<T>) -> T {
@@ -514,6 +529,15 @@ impl Settings {
                 open_scale: int(values, "animation-open-scale", 50, 100) as f32 / 100.0,
             },
             bindings: bindings::parse(values.lists.get("bindings").map(Vec::as_slice).unwrap_or_default()),
+            window_rules: rules::parse_all(values.lists.get("window-rules").map(Vec::as_slice).unwrap_or_default()),
+            scratchpads: rules::parse_scratchpads(values.lists.get("scratchpads").map(Vec::as_slice).unwrap_or_default()),
+            exec_once: values
+                .lists
+                .get("exec-once")
+                .map(|entries| entries.iter().filter_map(|entry| bindings::split_command(entry).ok()).filter(|command| !command.is_empty()).collect())
+                .unwrap_or_default(),
+            xdg_autostart: boolean(values, "xdg-autostart"),
+            session_environment: boolean(values, "session-environment"),
         }
     }
 }
