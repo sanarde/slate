@@ -3,8 +3,10 @@
 use std::ffi::OsString;
 use std::process::Command;
 
-pub fn terminal_command(default: &str) -> Vec<String> {
-    vec![std::env::var("TERMINAL").unwrap_or_else(|_| default.to_string())]
+pub fn terminal_command(configured: Option<&str>, default: &str) -> Vec<String> {
+    let environment = std::env::var("TERMINAL").ok().filter(|command| !command.is_empty());
+    let command = configured.or(environment.as_deref()).unwrap_or(default);
+    command.split_whitespace().map(String::from).collect()
 }
 
 pub fn spawn(command: &[String], envs: &[(&str, OsString)]) {

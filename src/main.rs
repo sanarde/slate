@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+mod cfgd;
+mod config;
 mod spawn;
 mod wayland;
 mod x11;
@@ -48,9 +50,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let command: Vec<String> = args.collect();
 
+    let mut cfgd = cfgd::Cfgd::open();
+    let settings = cfgd.as_mut().map(config::Settings::load).unwrap_or_default();
+
     match backend.unwrap_or_else(detect_backend) {
-        Backend::X11 => x11::run(&command),
-        backend => wayland::run(backend, &command),
+        Backend::X11 => x11::run(&command, settings, cfgd),
+        backend => wayland::run(backend, &command, settings, cfgd),
     }
 }
 
