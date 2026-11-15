@@ -287,6 +287,7 @@ fn perform(state: &mut Slate, window: &Window, action: ClickAction) {
     match action {
         ClickAction::None => {}
         ClickAction::Maximize => shell::toggle_maximized(state, window),
+        ClickAction::Minimize => shell::minimize_window(state, window),
         ClickAction::Fullscreen => shell::toggle_fullscreen(state, window),
         ClickAction::Close => shell::close_window(window),
     }
@@ -351,6 +352,7 @@ pub fn release(state: &mut Slate) {
     match kind {
         ButtonKind::Close => shell::close_window(&window),
         ButtonKind::Maximize => shell::toggle_maximized(state, &window),
+        ButtonKind::Minimize => shell::minimize_window(state, &window),
     }
 }
 

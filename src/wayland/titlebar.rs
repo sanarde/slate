@@ -154,6 +154,9 @@ fn draw_icon(canvas: &mut Canvas, icon: &Icon) {
             line(canvas, cx - k, cy - k, cx + k, cy + k);
             line(canvas, cx - k, cy + k, cx + k, cy - k);
         }
+        ButtonKind::Minimize => {
+            line(canvas, cx - k, cy + k * 0.6, cx + k, cy + k * 0.6);
+        }
         ButtonKind::Maximize if !maximized => {
             canvas.fill(color, |x, y| rounded_rect(x, y, cx, cy, k, k, 0.0).abs() - stroke / 2.0);
         }
@@ -228,7 +231,7 @@ pub fn render(params: &Params) -> Vec<u8> {
         let fill = if params.hover == Some(*kind) {
             match kind {
                 ButtonKind::Close => decoration.button_close_hover_color,
-                ButtonKind::Maximize => decoration.button_hover_color,
+                ButtonKind::Maximize | ButtonKind::Minimize => decoration.button_hover_color,
             }
         } else {
             decoration.button_color
@@ -343,7 +346,8 @@ mod tests {
         assert!(*kind == ButtonKind::Close);
         assert_eq!(close.loc.x + close.size.w, 200 - decoration.button_margin as i32);
 
-        let (_, maximize) = &buttons[0];
+        let (kind, maximize) = &buttons[1];
+        assert!(*kind == ButtonKind::Maximize);
         assert_eq!(
             close.loc.x - (maximize.loc.x + maximize.size.w),
             decoration.button_spacing as i32
@@ -358,6 +362,7 @@ mod tests {
 
         assert_eq!(from, decoration.title_padding as i32);
         assert_eq!(to, buttons[0].1.loc.x - decoration.title_padding as i32);
+        assert!(buttons[0].0 == ButtonKind::Minimize);
     }
 
     #[test]
