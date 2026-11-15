@@ -23,7 +23,7 @@ use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::drm::control::{Device as ControlDevice, ModeTypeFlags, connector, crtc};
-use smithay::reexports::input::Libinput;
+use smithay::reexports::input::{Device, Libinput};
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::DeviceFd;
@@ -31,6 +31,7 @@ use smithay::utils::DeviceFd;
 use super::input;
 use super::render::{self, CLEAR_COLOR};
 use super::state::Slate;
+use crate::config::Settings;
 
 const COLOR_FORMATS: [Fourcc; 4] = [Fourcc::Xrgb8888, Fourcc::Argb8888, Fourcc::Xbgr8888, Fourcc::Abgr8888];
 const IDLE_REDRAW: Duration = Duration::from_millis(16);
@@ -53,6 +54,7 @@ pub struct Udev {
     device: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
     renderer: GlesRenderer,
+    devices: Vec<Device>,
     surfaces: HashMap<crtc::Handle, Surface>,
     active: bool,
 }
@@ -104,6 +106,7 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
         device,
         gbm,
         renderer,
+        devices: Vec::new(),
         surfaces: HashMap::new(),
         active: true,
     });
@@ -111,11 +114,18 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
     let handle = event_loop.handle();
 
     handle.insert_source(libinput_backend, |event, _, state| {
-        if let InputEvent::DeviceAdded { device } = &event {
-            let mut device = device.clone();
-            if device.config_tap_finger_count() > 0 {
-                let _ = device.config_tap_set_enabled(true);
+        match &event {
+            InputEvent::DeviceAdded { device } => {
+                if let Some(udev) = state.udev.as_mut() {
+                    udev.add_device(device.clone(), &state.settings);
+                }
             }
+            InputEvent::DeviceRemoved { device } => {
+                if let Some(udev) = state.udev.as_mut() {
+                    udev.devices.retain(|known| known != device);
+                }
+            }
+            _ => {}
         }
         input::process(state, event);
     })?;
@@ -147,7 +157,27 @@ pub fn init(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result
     Ok(())
 }
 
+fn configure_device(device: &mut Device, settings: &Settings) {
+    if device.config_tap_finger_count() > 0 {
+        let _ = device.config_tap_set_enabled(settings.tap_to_click);
+    }
+    if device.config_scroll_has_natural_scroll() {
+        let _ = device.config_scroll_set_natural_scroll_enabled(settings.natural_scroll);
+    }
+}
+
 impl Udev {
+    fn add_device(&mut self, mut device: Device, settings: &Settings) {
+        configure_device(&mut device, settings);
+        self.devices.push(device);
+    }
+
+    pub fn apply_input_settings(&mut self, settings: &Settings) {
+        for device in &mut self.devices {
+            configure_device(device, settings);
+        }
+    }
+
     pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         self.renderer.import_dmabuf(dmabuf, None).is_ok()
     }
