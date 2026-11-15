@@ -6,6 +6,7 @@
 #   key = @role          a color role of the Material You scheme, @role/12 sets the alpha to 12 percent
 #   bind = COMBO=ACTION  a key binding, repeat the line for more
 #   rule = APP_ID=MODE   a decoration rule, repeat the line for more
+#   window = C => A      a window rule, scratchpad = NAME=COMMAND and exec-once = COMMAND work the same way
 #   include = PATH       another file, theme:NAME includes a theme
 # A line that starts with # is a comment, so is the text after a space and a # in a line.
 # Colors are #rrggbb or #rrggbbaa. Changes to this file and to the files it includes apply at once.
@@ -122,12 +123,30 @@ theme = material-you
 #tap-to-click = true
 #natural-scroll = false
 
+# Window rules and session ----------------------------------------------------------------------
+
+# CONDITIONS => ACTIONS. Conditions: app_id=GLOB, title=GLOB, title~=TEXT. Actions: float, tile, workspace N,
+# size WxH, position X,Y or center, above, sticky, fullscreen, maximize, opacity V, no-shadow, no-decoration,
+# scratchpad NAME.
+#window = app_id=pavucontrol => float, size 900x600, position center
+#window = title~="Picture in Picture" => float, sticky, above
+
+# A drop down program, toggled with the scratchpad action.
+#scratchpad = term=foot --app-id scratch
+#window = app_id=scratch => scratchpad term, size 1000x500, position center
+#bind = Mod+grave=scratchpad term
+
+# Programs started once with the session.
+#exec-once = waybar
+#xdg-autostart = true
+
 # Key bindings ----------------------------------------------------------------------------------
 
 # These add to the built in bindings or replace the ones with the same combination.
 # Actions: terminal, close, maximize, minimize, restore, fullscreen, quit, focus-next, focus-prev, workspace N,
 # move-to-workspace N, toggle-tiling, layout-next, toggle-floating, master-grow, master-shrink,
-# master-more, master-fewer, promote, swap-next, swap-prev, exec COMMAND, none (removes a binding).
+# master-more, master-fewer, promote, swap-next, swap-prev, scratchpad NAME, reload, restart (X11 only),
+# exec COMMAND, none (removes a binding).
 #bind = Mod+d=exec rofi -show drun
 #bind = Mod+b=exec firefox
 #bind = Mod+Return=exec foot -e fish

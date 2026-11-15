@@ -10,6 +10,7 @@ Source layout:
 - `src/main.rs`: argument parsing and backend choice.
 - `src/spawn.rs`: starting programs.
 - `src/layout.rs`: tiling layouts as pure geometry, shared by both backends. `src/wayland/tiling.rs` and `src/x11/wm/tiling.rs` apply them.
+- `src/rules.rs`: window rules and scratchpad declarations as pure functions, applied by `place_window` on Wayland and `manage` on X11. `src/session.rs`: exec-once, XDG autostart and the environment import.
 - `src/ipc.rs`, `src/json.rs` and `src/bin/slatectl.rs`: the IPC server (threads and an eventfd, the backends answer in their own loop), the JSON writer and the client. `src/wayland/ipc.rs` and `src/x11/wm/ipc.rs` implement the state and the commands, `src/wayland/foreign_toplevel.rs` the wlr-foreign-toplevel-management protocol.
 - `src/bindings.rs`: parsing and matching of key bindings, shared by both backends.
 - `src/config.rs`: the setting types, their defaults and parsing from values, shared by both backends. `src/source.rs`: the layers (defaults, cfgd, theme, file), variables and color roles, `--dump-config`. `src/conf.rs`: the file format. `src/themes.rs` and `data/themes`: the themes. `src/scheme.rs`: the Seurat client and the baseline palette. `src/cfgd.rs`: libcfgd loaded at run time.

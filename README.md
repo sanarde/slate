@@ -208,7 +208,10 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 | `master-grow`, `master-shrink`, `master-more`, `master-fewer`, `promote`, `swap-next`, `swap-prev` | Tiling adjustments. |
 | `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
 | `workspace N`, `move-to-workspace N` | N from 1. |
-| `exec COMMAND [ARGUMENT...]` | Start a program, arguments are split at spaces. |
+| `scratchpad NAME` | Show, hide or start the scratchpad NAME, see [Window rules and session](#window-rules-and-session). |
+| `reload` | Read the configuration again now. |
+| `restart` | X11 only: restart Slate and keep the windows. Wayland clients cannot survive a compositor restart. |
+| `exec COMMAND [ARGUMENT...]` | Start a program, arguments are split like in a shell. |
 | `none` | Only in `COMBO=none`, removes the binding. |
 
 ```
@@ -253,6 +256,47 @@ rule = foot=none
 rule = firefox=client
 button-layout = close:maximize
 ```
+
+## Window rules and session
+
+### Window rules
+
+`window = CONDITIONS => ACTIONS` changes how a window opens. Conditions are `app_id=GLOB` (`class=` is the same), `title=GLOB` and `title~=TEXT` (contains). `*` and `?` work in globs, a value with spaces goes in quotes, all conditions of a rule must match. Actions are separated by commas. Later rules win over earlier ones.
+
+| Action | Meaning |
+| --- | --- |
+| `float`, `tile` | Force floating or tiling. |
+| `workspace N` | Open on workspace N, from 1. |
+| `size WxH` | Size of the window content. |
+| `position X,Y`, `position center` | Place the frame relative to the work area. |
+| `above` | Keep the window above the others. |
+| `sticky` | Show the window on every workspace, it always floats. |
+| `fullscreen`, `maximize` | Open in that state. |
+| `opacity V` | From 0.05 to 1. Wayland draws it, X11 sets `_NET_WM_WINDOW_OPACITY` for a compositor. |
+| `no-shadow`, `no-decoration` | Wayland only for the shadow. `no-decoration` removes the frame on both backends. |
+| `scratchpad NAME` | Make the window the scratchpad NAME. |
+
+```
+window = app_id=pavucontrol => float, size 900x600, position center
+window = title~="Picture in Picture" => float, sticky, above, opacity 0.9
+window = app_id=Steam title=Friends* => workspace 4
+```
+
+On Wayland the app id and the title are those at the moment the window opens. Rules are applied once, a restart on X11 does not move windows.
+
+### Scratchpads
+
+`scratchpad = NAME=COMMAND` declares a drop down program and a window rule `scratchpad NAME` tells which window belongs to it. The action `scratchpad NAME` starts the program if there is no such window, hides the window when it is focused and brings it to the current workspace otherwise.
+
+```
+scratchpad = term=foot --app-id scratch
+window = app_id=scratch => scratchpad term, size 1000x500, position center
+bind = Mod+grave=scratchpad term
+```
+
+### Session
+
+`exec-once = COMMAND` starts a program when Slate starts, repeat the line for more. `xdg-autostart = true` also starts the applications from the XDG autostart directories, `Hidden`, `OnlyShowIn`, `NotShowIn` and `TryExec` are honored and the desktop name is `Slate`. `session-environment` (on by default) imports `WAYLAND_DISPLAY`, `DISPLAY`, `SLATE_SOCKET`, `XCURSOR_*`, `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` into the D-Bus activation and systemd user environments with `dbus-update-activation-environment --systemd`, so that services find the session. It is skipped in the nested winit backend. The `restart` action does not run `exec-once` and autostart again.
 
 ## Panels, scripts and IPC
 
