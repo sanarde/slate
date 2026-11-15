@@ -17,6 +17,8 @@ use crate::spawn;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+const WORKSPACE_COUNT: usize = 9;
+const KEYSYM_1: u32 = 0x31;
 const BORDER: u32 = 2;
 const BORDER_FOCUSED: u32 = 0x6750a4;
 const BORDER_UNFOCUSED: u32 = 0x49454f;
@@ -41,6 +43,7 @@ enum Action {
     Maximize,
     Fullscreen,
     Quit,
+    Workspace(usize),
 }
 
 struct Client {
@@ -51,6 +54,9 @@ struct Client {
     fullscreen: bool,
     delete: bool,
     take_focus: bool,
+    workspace: usize,
+    hidden: bool,
+    pending_unmaps: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -80,6 +86,7 @@ pub struct Wm {
     work_areas: Vec<Rect>,
     drag: Option<Drag>,
     focused: Option<Window>,
+    workspace: usize,
     running: bool,
 }
 
@@ -110,6 +117,7 @@ impl Wm {
             work_areas: Vec::new(),
             drag: None,
             focused: None,
+            workspace: 0,
             running: true,
         };
 
@@ -193,6 +201,7 @@ impl Wm {
             atoms._NET_ACTIVE_WINDOW,
             atoms._NET_NUMBER_OF_DESKTOPS,
             atoms._NET_CURRENT_DESKTOP,
+            atoms._NET_WM_DESKTOP,
             atoms._NET_DESKTOP_GEOMETRY,
             atoms._NET_WORKAREA,
             atoms._NET_CLOSE_WINDOW,
@@ -207,7 +216,7 @@ impl Wm {
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_SUPPORTED, AtomEnum::ATOM, &supported)?;
         self.conn
-            .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[1])?;
+            .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[WORKSPACE_COUNT as u32])?;
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[0])?;
         self.conn.change_property32(
@@ -229,25 +238,32 @@ impl Wm {
             (keys::KEYSYM_E, Action::Quit),
         ];
 
+        let digits = (0..WORKSPACE_COUNT).map(|index| (KEYSYM_1 + index as u32, Action::Workspace(index)));
+        let wanted: Vec<(u32, Action)> = wanted.into_iter().chain(digits).collect();
+
         for (keysym, action) in wanted {
             let Some(keycode) = keys::keycode_for(&self.conn, keysym)? else {
                 tracing::warn!(keysym, "key is not present in the keyboard mapping");
                 continue;
             };
-            let base = if matches!(action, Action::Quit) {
-                u16::from(ModMask::M4) | u16::from(ModMask::SHIFT)
-            } else {
-                u16::from(ModMask::M4)
+            let mod4 = u16::from(ModMask::M4);
+            let shifted = mod4 | u16::from(ModMask::SHIFT);
+            let bases = match action {
+                Action::Quit => vec![shifted],
+                Action::Workspace(_) => vec![mod4, shifted],
+                _ => vec![mod4],
             };
-            for lock in LOCK_VARIANTS {
-                self.conn.grab_key(
-                    true,
-                    self.root,
-                    ModMask::from(base | lock),
-                    keycode,
-                    GrabMode::ASYNC,
-                    GrabMode::ASYNC,
-                )?;
+            for base in bases {
+                for lock in LOCK_VARIANTS {
+                    self.conn.grab_key(
+                        true,
+                        self.root,
+                        ModMask::from(base | lock),
+                        keycode,
+                        GrabMode::ASYNC,
+                        GrabMode::ASYNC,
+                    )?;
+                }
             }
             self.bindings.push((keycode, action));
         }
@@ -371,7 +387,7 @@ impl Wm {
         match event {
             Event::MapRequest(event) => self.map_request(event.window),
             Event::ConfigureRequest(event) => self.configure_request(&event),
-            Event::UnmapNotify(event) => self.unmanage(event.window),
+            Event::UnmapNotify(event) => self.unmapped(event.window),
             Event::DestroyNotify(event) => self.unmanage(event.window),
             Event::ClientMessage(event) => self.client_message(&event),
             Event::PropertyNotify(event) => {
@@ -520,10 +536,101 @@ impl Wm {
             fullscreen: false,
             delete: protocols.contains(&self.atoms.WM_DELETE_WINDOW),
             take_focus: protocols.contains(&self.atoms.WM_TAKE_FOCUS),
+            workspace: self.workspace,
+            hidden: false,
+            pending_unmaps: 0,
         });
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            self.atoms._NET_WM_DESKTOP,
+            AtomEnum::CARDINAL,
+            &[self.workspace as u32],
+        )?;
         self.conn.map_window(window)?;
         self.update_client_list()?;
         self.focus(window)
+    }
+
+    fn unmapped(&mut self, window: Window) -> Result<()> {
+        if let Some(client) = self.clients.iter_mut().find(|client| client.window == window)
+            && client.pending_unmaps > 0
+        {
+            client.pending_unmaps -= 1;
+            return Ok(());
+        }
+        self.unmanage(window)
+    }
+
+    fn switch_workspace(&mut self, target: usize) -> Result<()> {
+        if target >= WORKSPACE_COUNT || target == self.workspace {
+            return Ok(());
+        }
+        self.workspace = target;
+
+        for client in &mut self.clients {
+            let visible = client.workspace == target;
+            if visible && client.hidden {
+                client.hidden = false;
+                self.conn.map_window(client.window)?;
+            } else if !visible && !client.hidden {
+                client.hidden = true;
+                client.pending_unmaps += 1;
+                self.conn.unmap_window(client.window)?;
+            }
+        }
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.root,
+            self.atoms._NET_CURRENT_DESKTOP,
+            AtomEnum::CARDINAL,
+            &[target as u32],
+        )?;
+
+        self.focused = None;
+        let top = self.clients.iter().rev().find(|client| client.workspace == target).map(|client| client.window);
+        match top {
+            Some(window) => self.focus(window),
+            None => {
+                self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
+                self.set_active_window(NONE)
+            }
+        }
+    }
+
+    fn move_to_workspace(&mut self, window: Window, target: usize) -> Result<()> {
+        if target >= WORKSPACE_COUNT {
+            return Ok(());
+        }
+        let Some(client) = self.clients.iter_mut().find(|client| client.window == window) else {
+            return Ok(());
+        };
+        client.workspace = target;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            self.atoms._NET_WM_DESKTOP,
+            AtomEnum::CARDINAL,
+            &[target as u32],
+        )?;
+        if target == self.workspace {
+            return Ok(());
+        }
+
+        client.hidden = true;
+        client.pending_unmaps += 1;
+        self.conn.unmap_window(window)?;
+
+        let current = self.workspace;
+        let top = self.clients.iter().rev().find(|client| client.workspace == current).map(|client| client.window);
+        match top {
+            Some(top) => self.focus(top),
+            None => {
+                self.focused = None;
+                self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
+                self.set_active_window(NONE)
+            }
+        }
     }
 
     fn unmanage(&mut self, window: Window) -> Result<()> {
@@ -543,7 +650,8 @@ impl Wm {
 
         if self.focused == Some(window) {
             self.focused = None;
-            match self.clients.last().map(|client| client.window) {
+            let current = self.workspace;
+            match self.clients.iter().rev().find(|client| client.workspace == current).map(|client| client.window) {
                 Some(top) => self.focus(top)?,
                 None => {
                     self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -578,6 +686,13 @@ impl Wm {
     }
 
     fn focus(&mut self, window: Window) -> Result<()> {
+        let Some(index) = self.clients.iter().position(|client| client.window == window) else {
+            return Ok(());
+        };
+        let workspace = self.clients[index].workspace;
+        if workspace != self.workspace {
+            self.switch_workspace(workspace)?;
+        }
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
@@ -753,6 +868,12 @@ impl Wm {
         if event.type_ == atoms._NET_CLOSE_WINDOW {
             return self.close(event.window);
         }
+        if event.type_ == atoms._NET_CURRENT_DESKTOP {
+            return self.switch_workspace(data[0] as usize);
+        }
+        if event.type_ == atoms._NET_WM_DESKTOP {
+            return self.move_to_workspace(event.window, data[0] as usize);
+        }
         if event.type_ != atoms._NET_WM_STATE {
             return Ok(());
         }
@@ -779,6 +900,7 @@ impl Wm {
     }
 
     fn key_press(&mut self, event: &KeyPressEvent) -> Result<()> {
+        let shift = u16::from(event.state) & u16::from(ModMask::SHIFT) != 0;
         let Some((_, action)) = self.bindings.iter().find(|(keycode, _)| *keycode == event.detail) else {
             return Ok(());
         };
@@ -804,6 +926,11 @@ impl Wm {
                 }
             }
             Action::Quit => self.running = false,
+            Action::Workspace(index) => match (shift, focused) {
+                (true, Some(window)) => self.move_to_workspace(window, index)?,
+                (true, None) => {}
+                (false, _) => self.switch_workspace(index)?,
+            },
         }
         Ok(())
     }
