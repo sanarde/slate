@@ -10,6 +10,9 @@ use smithay::wayland::selection::SelectionTarget;
 use smithay::wayland::selection::data_device::{
     clear_data_device_selection, request_data_device_client_selection, set_data_device_selection,
 };
+use smithay::wayland::selection::primary_selection::{
+    clear_primary_selection, request_primary_client_selection, set_primary_selection,
+};
 use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 use smithay::xwayland::xwm::{Reorder, ResizeEdge, XwmId};
 use smithay::xwayland::{X11Surface, X11Wm, XWayland, XWaylandEvent, XwmHandler};
@@ -185,23 +188,26 @@ impl XwmHandler for Slate {
     }
 
     fn send_selection(&mut self, _xwm: XwmId, target: SelectionTarget, mime_type: String, fd: OwnedFd) {
-        if target != SelectionTarget::Clipboard {
-            return;
-        }
-        if let Err(error) = request_data_device_client_selection(&self.seat, mime_type, fd) {
+        let requested = match target {
+            SelectionTarget::Clipboard => request_data_device_client_selection(&self.seat, mime_type, fd).map_err(|error| error.to_string()),
+            SelectionTarget::Primary => request_primary_client_selection(&self.seat, mime_type, fd).map_err(|error| error.to_string()),
+        };
+        if let Err(error) = requested {
             tracing::warn!(%error, "failed to request Wayland selection for XWayland");
         }
     }
 
     fn new_selection(&mut self, _xwm: XwmId, target: SelectionTarget, mime_types: Vec<String>) {
-        if target == SelectionTarget::Clipboard {
-            set_data_device_selection(&self.display_handle, &self.seat, mime_types, ());
+        match target {
+            SelectionTarget::Clipboard => set_data_device_selection(&self.display_handle, &self.seat, mime_types, ()),
+            SelectionTarget::Primary => set_primary_selection(&self.display_handle, &self.seat, mime_types, ()),
         }
     }
 
     fn cleared_selection(&mut self, _xwm: XwmId, target: SelectionTarget) {
-        if target == SelectionTarget::Clipboard {
-            clear_data_device_selection(&self.display_handle, &self.seat);
+        match target {
+            SelectionTarget::Clipboard => clear_data_device_selection(&self.display_handle, &self.seat),
+            SelectionTarget::Primary => clear_primary_selection(&self.display_handle, &self.seat),
         }
     }
 

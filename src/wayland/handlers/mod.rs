@@ -2,6 +2,7 @@
 
 pub mod dmabuf;
 pub mod layer;
+pub mod protocols;
 pub mod xdg;
 pub mod xwayland;
 
@@ -21,6 +22,7 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler, set_data_device_focus,
 };
+use smithay::wayland::selection::primary_selection::set_primary_focus;
 use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::xwayland::XWaylandClientData;
@@ -71,6 +73,7 @@ impl SeatHandler for Slate {
         let client = focused
             .and_then(|focus| focus.wl_surface())
             .and_then(|surface| surface.client());
+        set_primary_focus(&self.display_handle, seat, client.clone());
         set_data_device_focus(&self.display_handle, seat, client);
     }
 
