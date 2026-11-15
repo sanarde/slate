@@ -144,7 +144,58 @@ fn parse_workspace(argument: &str) -> Result<usize, String> {
     Ok(number - 1)
 }
 
-fn parse_action(text: &str) -> Result<Option<Action>, String> {
+pub fn split_command(text: &str) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut started = false;
+    let mut quote: Option<char> = None;
+    let mut characters = text.chars();
+
+    while let Some(character) = characters.next() {
+        match (quote, character) {
+            (Some(open), close) if close == open => quote = None,
+            (Some('"'), '\\') => match characters.next() {
+                Some(escaped @ ('"' | '\\' | '$' | '`')) => current.push(escaped),
+                Some(other) => {
+                    current.push('\\');
+                    current.push(other);
+                }
+                None => return Err("a backslash ends the command".to_string()),
+            },
+            (Some(_), other) => current.push(other),
+            (None, '\'' | '"') => {
+                quote = Some(character);
+                started = true;
+            }
+            (None, '\\') => match characters.next() {
+                Some(escaped) => {
+                    current.push(escaped);
+                    started = true;
+                }
+                None => return Err("a backslash ends the command".to_string()),
+            },
+            (None, space) if space.is_whitespace() => {
+                if started {
+                    words.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            (None, other) => {
+                current.push(other);
+                started = true;
+            }
+        }
+    }
+    if quote.is_some() {
+        return Err("a quote is not closed".to_string());
+    }
+    if started {
+        words.push(current);
+    }
+    Ok(words)
+}
+
+pub fn parse_action(text: &str) -> Result<Option<Action>, String> {
     let text = text.trim();
     let (name, argument) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
 
@@ -172,7 +223,7 @@ fn parse_action(text: &str) -> Result<Option<Action>, String> {
         "workspace" => Action::Workspace(parse_workspace(argument)?),
         "move-to-workspace" => Action::MoveToWorkspace(parse_workspace(argument)?),
         "exec" => {
-            let command: Vec<String> = argument.split_whitespace().map(String::from).collect();
+            let command = split_command(argument)?;
             if command.is_empty() {
                 return Err("exec needs a command".to_string());
             }
@@ -270,6 +321,18 @@ mod tests {
         let bindings = parse(&entries(&["Mod+Q=close", "Hyper+x=quit", "Mod+nosuchkey=quit", "garbage", "Mod+9=workspace 0"]));
         assert_eq!(bindings.len(), defaults().len());
         assert!(find(&bindings, PRIMARY, "q").is_some());
+    }
+
+    #[test]
+    fn commands_are_split_like_a_shell_does() {
+        assert_eq!(split_command("firefox --new-window").unwrap(), vec!["firefox", "--new-window"]);
+        assert_eq!(
+            split_command("sh -c 'echo $HOME > \"/tmp/a b\"'").unwrap(),
+            vec!["sh", "-c", "echo $HOME > \"/tmp/a b\""]
+        );
+        assert_eq!(split_command("a\\ b \"c d\" '' e").unwrap(), vec!["a b", "c d", "", "e"]);
+        assert!(split_command("a 'b").is_err());
+        assert!(split_command("a\\").is_err());
     }
 
     #[test]
