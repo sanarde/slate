@@ -25,17 +25,17 @@ type = i
 default = 2
 min = 0
 max = 32
-summary = Window border width in pixels, X11 only
+summary = Window border width in pixels
 
 [border-color-focused]
 type = s
 default = #6750a4
-summary = Border color of the focused window as #rrggbb, X11 only
+summary = Border color of the focused window as #rrggbb
 
 [border-color-unfocused]
 type = s
 default = #49454f
-summary = Border color of the other windows as #rrggbb, X11 only
+summary = Border color of the other windows as #rrggbb
 
 [xkb-rules]
 type = s
@@ -97,3 +97,155 @@ summary = Treat a tap on a touchpad as a click, Wayland on a TTY only
 type = b
 default = false
 summary = Reverse the scroll direction of touchpads and mice, Wayland on a TTY only
+
+[decoration-mode]
+type = s
+default = server
+choices = server; client; auto
+summary = Who draws the window titlebars, server always asks for server side decorations, client for client side ones, auto follows the application. Wayland only
+
+[decoration-rules]
+type = as
+default =
+summary = Per application overrides as APP_ID=server, APP_ID=client or APP_ID=none, none removes the frame completely. Wayland only
+
+[titlebar-height]
+type = i
+default = 30
+min = 16
+max = 96
+summary = Height of the titlebar in pixels, Wayland only
+
+[titlebar-color-focused]
+type = s
+default = #6750a4
+summary = Titlebar color of the focused window as #rrggbb or #rrggbbaa, Wayland only
+
+[titlebar-color-unfocused]
+type = s
+default = #49454f
+summary = Titlebar color of the other windows as #rrggbb or #rrggbbaa, Wayland only
+
+[title-color-focused]
+type = s
+default = #ffffff
+summary = Title text color of the focused window, Wayland only
+
+[title-color-unfocused]
+type = s
+default = #cac4d0
+summary = Title text color of the other windows, Wayland only
+
+[title-font]
+type = s
+default = sans-serif
+summary = Comma separated fontconfig patterns or font file paths, later ones are used for missing glyphs, Wayland only
+
+[title-font-size]
+type = i
+default = 13
+min = 6
+max = 64
+summary = Title font size in pixels, Wayland only
+
+[title-align]
+type = s
+default = center
+choices = left; center; right
+summary = Alignment of the title between the buttons, Wayland only
+
+[title-padding]
+type = i
+default = 12
+min = 0
+max = 128
+summary = Space between the title and the buttons or the titlebar edge in pixels, Wayland only
+
+[corner-radius]
+type = i
+default = 8
+min = 0
+max = 32
+summary = Radius of the upper corners of the titlebar in pixels, Wayland only
+
+[resize-margin]
+type = i
+default = 4
+min = 0
+max = 32
+summary = Width of the invisible area outside the frame that resizes the window in pixels, Wayland only
+
+[button-layout]
+type = s
+default = :maximize,close
+summary = Titlebar buttons as LEFT:RIGHT lists of close and maximize, for example close:maximize, Wayland only
+
+[button-size]
+type = i
+default = 18
+min = 8
+max = 64
+summary = Size of a titlebar button in pixels, Wayland only
+
+[button-spacing]
+type = i
+default = 6
+min = 0
+max = 32
+summary = Space between titlebar buttons in pixels, Wayland only
+
+[button-margin]
+type = i
+default = 8
+min = 0
+max = 64
+summary = Space between the titlebar edge and the buttons in pixels, Wayland only
+
+[button-shape]
+type = s
+default = circle
+choices = circle; rounded; square
+summary = Shape of the button background, Wayland only
+
+[button-color]
+type = s
+default = #00000000
+summary = Button background color, Wayland only
+
+[button-hover-color]
+type = s
+default = #ffffff33
+summary = Button background color under the pointer, Wayland only
+
+[button-close-hover-color]
+type = s
+default = #e5484d
+summary = Background color of the close button under the pointer, Wayland only
+
+[button-icon-color-focused]
+type = s
+default = #ffffff
+summary = Button icon color in the focused window, Wayland only
+
+[button-icon-color-unfocused]
+type = s
+default = #cac4d0
+summary = Button icon color in the other windows, Wayland only
+
+[titlebar-double-click]
+type = s
+default = maximize
+choices = none; maximize; fullscreen; close
+summary = Action of a double click on the titlebar, Wayland only
+
+[titlebar-middle-click]
+type = s
+default = none
+choices = none; maximize; fullscreen; close
+summary = Action of a middle click on the titlebar, Wayland only
+
+[titlebar-right-click]
+type = s
+default = none
+choices = none; maximize; fullscreen; close
+summary = Action of a right click on the titlebar, Wayland only
