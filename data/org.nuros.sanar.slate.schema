@@ -1,0 +1,99 @@
+[schema]
+id = org.nuros.sanar.slate
+path = /org/nuros/sanar/slate/
+
+[mod-key]
+type = s
+default = auto
+choices = auto; super; alt
+summary = Modifier of the key bindings, auto is Super, or Alt in a nested Wayland window
+
+[terminal]
+type = s
+default =
+summary = Command started by Mod+Return, empty uses the environment variable TERMINAL and then foot or xterm
+
+[workspace-count]
+type = i
+default = 9
+min = 1
+max = 9
+summary = Number of workspaces
+
+[border-width]
+type = i
+default = 2
+min = 0
+max = 32
+summary = Window border width in pixels, X11 only
+
+[border-color-focused]
+type = s
+default = #6750a4
+summary = Border color of the focused window as #rrggbb, X11 only
+
+[border-color-unfocused]
+type = s
+default = #49454f
+summary = Border color of the other windows as #rrggbb, X11 only
+
+[xkb-rules]
+type = s
+default =
+summary = XKB rules file, Wayland only, empty uses the XKB_DEFAULT_RULES environment variable
+
+[xkb-model]
+type = s
+default =
+summary = XKB keyboard model, Wayland only, empty uses the XKB_DEFAULT_MODEL environment variable
+
+[xkb-layout]
+type = s
+default =
+summary = Comma separated XKB layouts, Wayland only, empty uses the XKB_DEFAULT_LAYOUT environment variable
+
+[xkb-variant]
+type = s
+default =
+summary = Comma separated XKB variants, Wayland only, empty uses the XKB_DEFAULT_VARIANT environment variable
+
+[xkb-options]
+type = s
+default =
+summary = Comma separated XKB options such as grp:alt_shift_toggle, Wayland only
+
+[repeat-delay]
+type = i
+default = 200
+min = 10
+max = 2000
+summary = Delay in milliseconds before a held key repeats, Wayland only
+
+[repeat-rate]
+type = i
+default = 25
+min = 1
+max = 200
+summary = Key repeats per second, Wayland only
+
+[cursor-theme]
+type = s
+default =
+summary = Cursor theme, Wayland only, empty uses the environment variable XCURSOR_THEME and then default
+
+[cursor-size]
+type = i
+default = 0
+min = 0
+max = 256
+summary = Cursor size in pixels, Wayland only, 0 uses the environment variable XCURSOR_SIZE and then 24
+
+[tap-to-click]
+type = b
+default = true
+summary = Treat a tap on a touchpad as a click, Wayland on a TTY only
+
+[natural-scroll]
+type = b
+default = false
+summary = Reverse the scroll direction of touchpads and mice, Wayland on a TTY only
