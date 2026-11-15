@@ -16,6 +16,7 @@ use super::focus::KeyFocus;
 use super::grabs::{self, Edges};
 use super::shell;
 use super::state::{ModKey, Slate};
+use super::tiling;
 use super::udev;
 use crate::bindings::{self, Action, Required};
 use crate::spawn;
@@ -131,6 +132,27 @@ fn run(state: &mut Slate, action: Action) {
         Action::MoveToWorkspace(index) => {
             if let Some(window) = shell::focused_window(state) {
                 shell::move_to_workspace(state, &window, index);
+            }
+        }
+        Action::ToggleTiling => tiling::toggle_tiling(state),
+        Action::LayoutNext => tiling::layout_next(state),
+        Action::ToggleFloating => {
+            if let Some(window) = shell::focused_window(state) {
+                tiling::toggle_floating(state, &window);
+            }
+        }
+        Action::MasterGrow => tiling::master_ratio(state, true),
+        Action::MasterShrink => tiling::master_ratio(state, false),
+        Action::MasterMore => tiling::master_count(state, true),
+        Action::MasterFewer => tiling::master_count(state, false),
+        Action::Promote => {
+            if let Some(window) = shell::focused_window(state) {
+                tiling::promote(state, &window);
+            }
+        }
+        Action::SwapNext | Action::SwapPrevious => {
+            if let Some(window) = shell::focused_window(state) {
+                tiling::swap_neighbor(state, &window, action == Action::SwapNext);
             }
         }
         Action::FocusNext => shell::cycle_focus(state, true),

@@ -13,6 +13,7 @@ use smithay::utils::{Logical, Point, Rectangle, Serial, Size};
 use smithay::xwayland::xwm;
 
 use super::state::Slate;
+use super::tiling;
 
 const MIN_SIZE: i32 = 32;
 
@@ -126,6 +127,12 @@ fn start(
     let Some(mut start_data) = start_data.or_else(|| pointer.grab_start_data()) else {
         return;
     };
+    if tiling::is_tiled(&window) {
+        match kind {
+            GrabKind::Move => tiling::make_floating(state, &window),
+            GrabKind::Resize(_) => return,
+        }
+    }
     let Some(initial) = state.space.element_geometry(&window) else {
         return;
     };

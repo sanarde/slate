@@ -12,6 +12,7 @@ use super::cursor::Cursors;
 use super::font::Fonts;
 use super::handlers::decoration::reapply;
 use super::shell;
+use super::tiling;
 use super::state::{ModKey, Slate};
 use crate::config::{ModKeySetting, Settings, Xkb};
 
@@ -101,6 +102,13 @@ impl Slate {
                 reapply(self, toplevel);
             }
             shell::refit_maximized(self);
+        }
+
+        if old.tiling != new.tiling || old.decoration != new.decoration || old.border_width != new.border_width {
+            if old.tiling != new.tiling {
+                tiling::reset_layouts(self);
+            }
+            tiling::arrange(self);
         }
     }
 }

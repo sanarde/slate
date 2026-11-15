@@ -19,14 +19,18 @@ use super::focus::KeyFocus;
 use super::decoration;
 use super::grabs;
 use super::scale;
+use super::tiling;
 use super::state::Slate;
 
 #[derive(Default)]
-struct WindowState {
-    restore: Option<Rectangle<i32, Logical>>,
-    maximized: bool,
-    fullscreen: bool,
-    workspace: usize,
+pub(super) struct WindowState {
+    pub(super) restore: Option<Rectangle<i32, Logical>>,
+    pub(super) maximized: bool,
+    pub(super) fullscreen: bool,
+    pub(super) workspace: usize,
+    pub(super) floating: bool,
+    pub(super) tiled: bool,
+    pub(super) float_rect: Option<Rectangle<i32, Logical>>,
 }
 
 pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> {
@@ -74,9 +78,11 @@ fn place_window(state: &mut Slate, window: Window) {
     if let Some(surface) = window.x11_surface() {
         let _ = surface.configure(Rectangle::new(location, size));
     }
+    tiling::register(state, &window);
     state.space.map_element(window.clone(), location, false);
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn unmap_window(state: &mut Slate, window: &Window) {
@@ -85,9 +91,11 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     state.minimized.retain(|(minimized, _)| minimized != window);
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
+    tiling::forget(state, window);
 
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) {
@@ -113,13 +121,13 @@ pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) 
     keyboard.set_focus(state, focus, serial);
 }
 
-fn is_override_redirect(window: &Window) -> bool {
+pub(super) fn is_override_redirect(window: &Window) -> bool {
     window
         .x11_surface()
         .is_some_and(|surface| surface.is_override_redirect())
 }
 
-fn workspace_of(window: &Window) -> usize {
+pub(super) fn workspace_of(window: &Window) -> usize {
     with_window_state(window, |window_state| window_state.workspace)
 }
 
@@ -155,6 +163,7 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
 
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn clamp_workspaces(state: &mut Slate) {
@@ -204,6 +213,7 @@ pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
 
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn minimize_window(state: &mut Slate, window: &Window) {
@@ -227,6 +237,7 @@ pub fn minimize_window(state: &mut Slate, window: &Window) {
 
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn restore_window(state: &mut Slate, window: &Window) {
@@ -242,6 +253,7 @@ pub fn restore_window(state: &mut Slate, window: &Window) {
     state.space.map_element(window.clone(), location, true);
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+    tiling::arrange(state);
 }
 
 pub fn restore_last_minimized(state: &mut Slate) {
@@ -391,6 +403,7 @@ pub fn set_maximized(state: &mut Slate, window: &Window, maximized: bool) {
     }
     let target = inset_target(state, window, target, maximized);
     resize_to_state(state, window, ToplevelState::Maximized, maximized, target);
+    tiling::arrange(state);
 }
 
 pub fn set_fullscreen(state: &mut Slate, window: &Window, fullscreen: bool) {
@@ -415,6 +428,7 @@ pub fn set_fullscreen(state: &mut Slate, window: &Window, fullscreen: bool) {
         let _ = surface.set_fullscreen(fullscreen);
     }
     resize_to_state(state, window, ToplevelState::Fullscreen, fullscreen, target);
+    tiling::arrange(state);
 }
 
 fn resize_to_state(
@@ -457,13 +471,13 @@ fn send_current_state(window: &Window) {
     }
 }
 
-fn with_window_state<T>(window: &Window, f: impl FnOnce(&mut WindowState) -> T) -> T {
+pub(super) fn with_window_state<T>(window: &Window, f: impl FnOnce(&mut WindowState) -> T) -> T {
     window.user_data().insert_if_missing(|| RefCell::new(WindowState::default()));
     let mut window_state = window.user_data().get::<RefCell<WindowState>>().unwrap().borrow_mut();
     f(&mut window_state)
 }
 
-fn output_for_window(state: &Slate, window: &Window) -> Option<Output> {
+pub(super) fn output_for_window(state: &Slate, window: &Window) -> Option<Output> {
     state
         .space
         .outputs_for_element(window)
@@ -472,7 +486,7 @@ fn output_for_window(state: &Slate, window: &Window) -> Option<Output> {
         .or_else(|| state.space.outputs().next().cloned())
 }
 
-fn active_zone(state: &Slate) -> Rectangle<i32, Logical> {
+pub(super) fn active_zone(state: &Slate) -> Rectangle<i32, Logical> {
     let pointer = state.seat.get_pointer().unwrap().current_location();
     let output = state
         .space
