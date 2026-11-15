@@ -8,19 +8,20 @@
 
 ## About
 
-Floating window manager of SanarDE that runs as a Wayland compositor built on Smithay and as a separate X11 window manager.
+Floating window manager that runs as a Wayland compositor built on Smithay and as a separate X11 window manager. It is the window manager of SanarDE and works without it.
 
 ## Dependencies
 
 - Rust 1.88 or newer (edition 2024) and Cargo
 - libseat, libinput, libudev, libgbm, libxkbcommon
-- libcfgd, the client library of [cfgd](https://git.nuros.org/sanarde/cfgd), found through `pkg-config`
 - EGL and OpenGL ES (Mesa)
+- fontconfig (`fc-match`), to find the titlebar font
 
 Optional at run time:
 
 - Xwayland, to run X11 applications in the Wayland session
-- The cfgd daemon `cfgdd`, for settings. Without it the defaults apply.
+- libcfgd and the cfgd daemon `cfgdd` of [cfgd](https://git.nuros.org/sanarde/cfgd), the settings service of SanarDE. Slate loads libcfgd when it is installed and works from its configuration file when it is not.
+- `seuratd` of [seurat](https://git.nuros.org/sanarde/seurat), the source of the Material You color scheme. Without it a built in palette is used.
 
 ## Build
 
@@ -28,15 +29,26 @@ Optional at run time:
 cargo build --release
 ```
 
-The binary is `target/release/slate`. When libcfgd is not installed, point `PKG_CONFIG_PATH` at the directory with its `.pc` file. The files in `data` are installed by hand: `slate-wayland.desktop` to `share/wayland-sessions`, `slate-x11.desktop` to `share/xsessions` and `org.nuros.sanar.slate.schema` to `share/cfgd/schemas`.
+The binary is `target/release/slate`. The files in `data` are installed by hand: `slate-wayland.desktop` to `share/wayland-sessions`, `slate-x11.desktop` to `share/xsessions`, `org.nuros.sanar.slate.schema` to `share/cfgd/schemas` (only for SanarDE), `themes/*.conf` to `share/slate/themes` (optional, the themes are built in) and `slate.conf.example` as a starting point for `~/.config/slate/slate.conf`.
 
 ## Usage
 
 ```
-slate [--backend auto|winit|udev|x11] [COMMAND [ARGUMENT...]]
+slate [OPTION...] [COMMAND [ARGUMENT...]]
 ```
 
-`COMMAND` is started once the session is up. Backends:
+`COMMAND` is started once the session is up. Options:
+
+| Option | Meaning |
+| --- | --- |
+| `--backend auto\|winit\|udev\|x11` | Display backend. |
+| `--config PATH` | Configuration file, default `$XDG_CONFIG_HOME/slate/slate.conf`, or `$SLATE_CONFIG`. |
+| `--theme NAME` | Use this theme instead of the configured one. |
+| `--dump-config` | Print the effective settings and where each value comes from. |
+| `--check` | Read the configuration, print the problems and exit with status 1 when there are any. |
+| `--list-themes` | Print the available themes. |
+
+Backends:
 
 - `udev`: Wayland compositor on a TTY or from a display manager. Uses DRM, libinput and libseat.
 - `winit`: Wayland compositor in a window of another Wayland or X11 session, for development.
@@ -65,12 +77,66 @@ The Wayland backend implements xdg-shell, wlr-layer-shell, wlr-output-management
 
 The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE` including above, fullscreen and maximized at map time, `_NET_CURRENT_DESKTOP`, the `WM_HINTS` input flag and RandR monitors.
 
-## Settings
+## Configuration
 
-Settings are keys of the cfgd schema `org.nuros.sanar.slate`, path `/org/nuros/sanar/slate/`. Changes apply without a restart.
+Slate has the same settings with or without SanarDE. They come from four layers, from the lowest:
+
+1. The built in defaults.
+2. The settings of the cfgd schema `org.nuros.sanar.slate`, path `/org/nuros/sanar/slate/`, when libcfgd and `cfgdd` are present. A value equal to the default counts as not set.
+3. The theme.
+4. The file `~/.config/slate/slate.conf`.
+
+A change in any layer applies without a restart, including the files that are included and the color scheme of Seurat. `slate --dump-config` prints every setting with its layer, `slate --check` finds mistakes.
+
+### Without SanarDE
+
+Copy `data/slate.conf.example` to `~/.config/slate/slate.conf` and edit it. A minimal window manager:
+
+```
+theme = minimal
+mod-key = alt
+terminal = alacritty
+decoration-rules = alacritty=none
+bind = Mod+d=exec rofi -show drun
+bind = Mod+b=exec firefox
+```
+
+### With SanarDE
+
+The default theme `material-you` uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
+
+### File format
+
+```
+# comment
+$accent = #6750a4                    # a variable
+theme = nord
+border-color-focused = $accent       # use a variable
+titlebar-color-unfocused = @surface_container_high
+button-hover-color = @on_surface/12  # a color role with 12 percent alpha
+include = ~/.config/slate/mine.conf  # another file, theme:NAME includes a theme
+bind = Mod+b=exec firefox            # repeat for more bindings
+rule = foot=none                     # repeat for more decoration rules
+```
+
+- A key is a setting name from the tables below. Unknown keys are reported. Section headers such as `[slate]` are ignored.
+- `$name` is a variable. A theme defines its palette as variables, so defining the same variable in `slate.conf` recolors the theme.
+- `@role` is a role of the Material You scheme: `primary`, `on_primary`, `primary_container`, `surface`, `on_surface`, `surface_container_high`, `outline`, `outline_variant`, `error` and the other roles of Seurat. `@role/NN` sets the alpha to NN percent. Without Seurat the roles come from the built in baseline palette, `color-scheme` selects its light or dark variant.
+- `bind` and `rule` add a line to `bindings` and `decoration-rules`. Those keys also accept a list separated by `;`.
+- A comment starts with `#` at the start of a line or after a space. A color such as `#6750a4` is not a comment.
+
+### Themes
+
+`slate --list-themes` lists them. Built in: `material-you`, `minimal` (borders only), `nord`, `gruvbox-dark`, `catppuccin-mocha`, `dracula`, `tokyo-night` and `light`. `none` uses no theme. A theme is a file in the format above. Files in `~/.config/slate/themes` and `~/.local/share/slate/themes` replace the built in ones with the same name and add new ones, so a rice is one file that can be shared. A theme can build on another with `include = theme:nord`.
+
+### Settings
+
+Every setting has the same name in the file and in cfgd. The defaults in the tables are the values without a theme, the theme `material-you` changes colors, sizes and the font.
 
 | Key | Default | Applies to |
 | --- | --- | --- |
+| `theme` | `material-you` | Both. |
+| `color-scheme` | `auto` | Both. Palette variant without Seurat: `auto`, `light` or `dark`. |
 | `mod-key` | `auto` | Both. `auto` is Super, or Alt in `winit`. Values: `auto`, `super`, `alt`. |
 | `terminal` | empty | Both. Command of Mod+Return, empty uses `$TERMINAL` and then `foot` or `xterm`. |
 | `workspace-count` | 9 | Both. From 1 to 9. |
@@ -82,9 +148,11 @@ Settings are keys of the cfgd schema `org.nuros.sanar.slate`, path `/org/nuros/s
 | `tap-to-click`, `natural-scroll` | true, false | Wayland on a TTY. |
 
 ```
-cfgd set /org/nuros/sanar/slate/xkb-layout 'us,ru'
-cfgd set /org/nuros/sanar/slate/xkb-options 'grp:alt_shift_toggle'
+xkb-layout = us,ru
+xkb-options = grp:alt_shift_toggle
 ```
+
+With SanarDE the same through cfgd: `cfgd set /org/nuros/sanar/slate/xkb-layout 'us,ru'`.
 
 ### Key bindings
 
@@ -99,8 +167,13 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 | `none` | Only in `COMBO=none`, removes the binding. |
 
 ```
-cfgd set /org/nuros/sanar/slate/bindings 'Mod+b=exec firefox;Mod+Return=exec foot -e fish;Mod+q=none;Ctrl+Alt+t=terminal'
+bind = Mod+b=exec firefox
+bind = Mod+Return=exec foot -e fish
+bind = Mod+q=none
+bind = Ctrl+Alt+t=terminal
 ```
+
+Through cfgd the key `bindings` takes the list: `cfgd set /org/nuros/sanar/slate/bindings 'Mod+b=exec firefox;Mod+q=none'`.
 
 Entries that cannot be parsed are logged and ignored.
 
@@ -131,8 +204,9 @@ The Wayland backend draws titlebars and borders itself for windows that ask for 
 Dragging the titlebar moves a window and dragging the frame or the margin resizes it.
 
 ```
-cfgd set /org/nuros/sanar/slate/decoration-rules 'foot=none;firefox=client'
-cfgd set /org/nuros/sanar/slate/button-layout 'close:maximize'
+rule = foot=none
+rule = firefox=client
+button-layout = close:maximize
 ```
 
 ## Roadmap
