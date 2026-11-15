@@ -179,6 +179,24 @@ Dialogs, windows with a fixed size, windows with a parent and the applications i
 | `master-count` | 1 | Windows in the master area. |
 | `floating-rules` | empty | Application ids that always float. In the file `float = APP_ID`. |
 
+### Shadows and animations
+
+The Wayland backend draws a soft shadow under windows that have a frame of Slate and animates windows. Both are on by default and can be turned off with `shadow-size = 0` and `animations = false`. The X11 backend has neither, because it has no compositor.
+
+Animations: a window fades and grows when it opens or is restored, windows move and resize smoothly when they are tiled, untiled, maximized or restored, and windows slide in when the workspace changes. Windows that close disappear at once.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `shadow-size` | 18 | Blur radius in pixels, 0 turns shadows off. |
+| `shadow-offset-x`, `shadow-offset-y` | 0, 6 | Shift of the shadow. |
+| `shadow-color-focused`, `shadow-color-unfocused` | `#00000073`, `#00000040` | Shadow colors with alpha. |
+| `shadow-tiled` | false | Shadows under tiled windows. |
+| `animations` | true | Master switch. |
+| `animation-duration` | 200 | Milliseconds, 0 turns animations off. |
+| `animation-curve` | `ease-out` | `linear`, `ease-out`, `ease-in-out` or `overshoot`. |
+| `animate-open`, `animate-move`, `animate-workspace` | true | Switches for opening and restoring, moving and resizing, and workspace changes. |
+| `animation-open-scale` | 94 | Percent of its size that an opening window starts from. |
+
 ### Key bindings
 
 The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in bindings or replace the ones with the same combination. `COMBO=none` removes a binding. A combination is modifiers and a key joined by `+`. Modifiers are `Mod` (the modifier of `mod-key`), `Super`, `Alt`, `Ctrl` and `Shift`. The key is any xkb keysym name such as `Return`, `Tab`, `F5`, `Print`, `XF86AudioRaiseVolume` or a letter. Letters match the latin key of the layout, so bindings keep working on a non latin layout.
@@ -238,7 +256,7 @@ button-layout = close:maximize
 
 ## Roadmap
 
-- Window shadows and animations.
+- Close animations and shadows for windows that draw their own decorations.
 - Text input and ext-image-copy-capture.
 
 ## Acknowledgments
