@@ -2,14 +2,29 @@
 
 mod bindings;
 mod cfgd;
+mod conf;
 mod config;
+mod scheme;
+mod source;
 mod spawn;
+mod themes;
 mod wayland;
 mod x11;
 
 use std::error::Error;
 
-const USAGE: &str = "usage: slate [--backend auto|winit|udev|x11] [COMMAND [ARGUMENT...]]";
+use source::{ConfigSource, Options};
+
+const USAGE: &str = "usage: slate [OPTION...] [COMMAND [ARGUMENT...]]
+
+options:
+  --backend auto|winit|udev|x11   display backend, auto picks winit inside a session and udev otherwise
+  --config PATH                   configuration file, default $XDG_CONFIG_HOME/slate/slate.conf
+  --theme NAME                    use this theme instead of the configured one
+  --dump-config                   print the effective settings and where each value comes from
+  --check                         read the configuration, print problems and exit
+  --list-themes                   print the available themes
+  --help, --version";
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Backend {
@@ -18,11 +33,20 @@ pub enum Backend {
     X11,
 }
 
+enum Mode {
+    Run,
+    DumpConfig,
+    Check,
+    ListThemes,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
 
     let mut args = std::env::args().skip(1).peekable();
     let mut backend = None;
+    let mut options = Options::default();
+    let mut mode = Mode::Run;
 
     while let Some(arg) = args.peek() {
         match arg.as_str() {
@@ -35,6 +59,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some("x11") => Some(Backend::X11),
                     _ => return Err(USAGE.into()),
                 };
+            }
+            "--config" => {
+                args.next();
+                options.config_path = Some(args.next().ok_or(USAGE)?.into());
+            }
+            "--theme" => {
+                args.next();
+                options.theme = Some(args.next().ok_or(USAGE)?);
+            }
+            "--dump-config" => {
+                args.next();
+                mode = Mode::DumpConfig;
+            }
+            "--check" => {
+                args.next();
+                mode = Mode::Check;
+            }
+            "--list-themes" => {
+                args.next();
+                mode = Mode::ListThemes;
             }
             "--help" => {
                 println!("{USAGE}");
@@ -49,14 +93,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    match mode {
+        Mode::ListThemes => {
+            for (name, origin) in themes::list() {
+                println!("{name}\t{origin}");
+            }
+            return Ok(());
+        }
+        Mode::DumpConfig => {
+            print!("{}", source::dump(&ConfigSource::new(options).load()));
+            return Ok(());
+        }
+        Mode::Check => {
+            let resolved = ConfigSource::new(options).load();
+            for warning in &resolved.warnings {
+                eprintln!("{warning}");
+            }
+            if resolved.warnings.is_empty() {
+                println!("{}: no problems found", resolved.config_path.display());
+                return Ok(());
+            }
+            std::process::exit(1);
+        }
+        Mode::Run => {}
+    }
+
     let command: Vec<String> = args.collect();
 
-    let mut cfgd = cfgd::Cfgd::open();
-    let settings = cfgd.as_mut().map(config::Settings::load).unwrap_or_default();
+    let mut config = ConfigSource::new(options);
+    let settings = config.settings();
 
     match backend.unwrap_or_else(detect_backend) {
-        Backend::X11 => x11::run(&command, settings, cfgd),
-        backend => wayland::run(backend, &command, settings, cfgd),
+        Backend::X11 => x11::run(&command, settings, config),
+        backend => wayland::run(backend, &command, settings, config),
     }
 }
 
