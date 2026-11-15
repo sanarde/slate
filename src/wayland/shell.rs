@@ -304,6 +304,16 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
     ipc::emit(state, "workspace", &[("index", (target + 1).to_string())]);
 }
 
+pub fn switch_relative(state: &mut Slate, forward: bool) {
+    let count = state.settings.workspace_count;
+    let target = if forward {
+        (state.workspace + 1).min(count.saturating_sub(1))
+    } else {
+        state.workspace.saturating_sub(1)
+    };
+    switch_workspace(state, target);
+}
+
 pub fn clamp_workspaces(state: &mut Slate) {
     let last = state.settings.workspace_count.saturating_sub(1);
     if state.workspace > last {

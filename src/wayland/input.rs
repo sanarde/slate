@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent, GestureEndEvent,
+    GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent,
 };
+use smithay::input::pointer as gesture;
+use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent};
 use smithay::desktop::{WindowSurfaceType, layer_map_for_output};
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, GrabStartData, MotionEvent, RelativeMotionEvent};
@@ -38,8 +41,194 @@ pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
         InputEvent::PointerMotionAbsolute { event } => pointer_motion_absolute::<B>(state, event),
         InputEvent::PointerButton { event } => pointer_button::<B>(state, event),
         InputEvent::PointerAxis { event } => pointer_axis::<B>(state, event),
+        InputEvent::GestureSwipeBegin { event } => swipe_begin::<B>(state, event),
+        InputEvent::GestureSwipeUpdate { event } => swipe_update::<B>(state, event),
+        InputEvent::GestureSwipeEnd { event } => swipe_end::<B>(state, event),
+        InputEvent::GesturePinchBegin { event } => {
+            let fingers = event.fingers();
+            let (serial, time) = (SERIAL_COUNTER.next_serial(), event.time_msec());
+            let pointer = state.seat.get_pointer().unwrap();
+            pointer.gesture_pinch_begin(state, &gesture::GesturePinchBeginEvent { serial, time, fingers });
+            pointer.frame(state);
+        }
+        InputEvent::GesturePinchUpdate { event } => {
+            let pointer = state.seat.get_pointer().unwrap();
+            pointer.gesture_pinch_update(
+                state,
+                &gesture::GesturePinchUpdateEvent {
+                    time: event.time_msec(),
+                    delta: (event.delta_x(), event.delta_y()).into(),
+                    scale: event.scale(),
+                    rotation: event.rotation(),
+                },
+            );
+            pointer.frame(state);
+        }
+        InputEvent::GesturePinchEnd { event } => {
+            let (serial, time, cancelled) = (SERIAL_COUNTER.next_serial(), event.time_msec(), event.cancelled());
+            let pointer = state.seat.get_pointer().unwrap();
+            pointer.gesture_pinch_end(state, &gesture::GesturePinchEndEvent { serial, time, cancelled });
+            pointer.frame(state);
+        }
+        InputEvent::GestureHoldBegin { event } => {
+            let fingers = event.fingers();
+            let (serial, time) = (SERIAL_COUNTER.next_serial(), event.time_msec());
+            let pointer = state.seat.get_pointer().unwrap();
+            pointer.gesture_hold_begin(state, &gesture::GestureHoldBeginEvent { serial, time, fingers });
+            pointer.frame(state);
+        }
+        InputEvent::GestureHoldEnd { event } => {
+            let (serial, time, cancelled) = (SERIAL_COUNTER.next_serial(), event.time_msec(), event.cancelled());
+            let pointer = state.seat.get_pointer().unwrap();
+            pointer.gesture_hold_end(state, &gesture::GestureHoldEndEvent { serial, time, cancelled });
+            pointer.frame(state);
+        }
+        InputEvent::TouchDown { event } => touch_down::<B>(state, event),
+        InputEvent::TouchMotion { event } => touch_motion::<B>(state, event),
+        InputEvent::TouchUp { event } => touch_up::<B>(state, event),
+        InputEvent::TouchCancel { .. } => {
+            if let Some(touch) = state.seat.get_touch() {
+                touch.cancel(state);
+            }
+        }
+        InputEvent::TouchFrame { .. } => {
+            if let Some(touch) = state.seat.get_touch() {
+                touch.frame(state);
+            }
+        }
         _ => {}
     }
+}
+
+fn swipe_begin<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeBeginEvent) {
+    let fingers = event.fingers();
+    if state.lock.is_none() && fingers == state.settings.gestures.fingers {
+        state.swipe = Some((0.0, 0.0));
+        return;
+    }
+    let serial = SERIAL_COUNTER.next_serial();
+    let pointer = state.seat.get_pointer().unwrap();
+    pointer.gesture_swipe_begin(
+        state,
+        &gesture::GestureSwipeBeginEvent {
+            serial,
+            time: event.time_msec(),
+            fingers,
+        },
+    );
+    pointer.frame(state);
+}
+
+fn swipe_update<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeUpdateEvent) {
+    if let Some((x, y)) = state.swipe.as_mut() {
+        *x += event.delta_x();
+        *y += event.delta_y();
+        return;
+    }
+    let pointer = state.seat.get_pointer().unwrap();
+    pointer.gesture_swipe_update(
+        state,
+        &gesture::GestureSwipeUpdateEvent {
+            time: event.time_msec(),
+            delta: (event.delta_x(), event.delta_y()).into(),
+        },
+    );
+    pointer.frame(state);
+}
+
+fn swipe_end<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeEndEvent) {
+    if let Some((x, y)) = state.swipe.take() {
+        if event.cancelled() {
+            return;
+        }
+        let gestures = &state.settings.gestures;
+        if x.abs().max(y.abs()) < gestures.threshold {
+            return;
+        }
+        let action = match (x.abs() >= y.abs(), x < 0.0, y < 0.0) {
+            (true, true, _) => gestures.left.clone(),
+            (true, false, _) => gestures.right.clone(),
+            (false, _, true) => gestures.up.clone(),
+            (false, _, false) => gestures.down.clone(),
+        };
+        if let Some(action) = action {
+            run(state, action);
+        }
+        return;
+    }
+    let serial = SERIAL_COUNTER.next_serial();
+    let pointer = state.seat.get_pointer().unwrap();
+    pointer.gesture_swipe_end(
+        state,
+        &gesture::GestureSwipeEndEvent {
+            serial,
+            time: event.time_msec(),
+            cancelled: event.cancelled(),
+        },
+    );
+    pointer.frame(state);
+}
+
+fn touch_location<E: AbsolutePositionEvent<B>, B: InputBackend>(state: &Slate, event: &E) -> Point<f64, Logical> {
+    let bounds = outputs_bounds(state);
+    event.position_transformed(bounds.size) + bounds.loc.to_f64()
+}
+
+fn touch_down<B: InputBackend>(state: &mut Slate, event: B::TouchDownEvent) {
+    let Some(touch) = state.seat.get_touch() else {
+        return;
+    };
+    let location = touch_location::<_, B>(state, &event);
+    let serial = SERIAL_COUNTER.next_serial();
+
+    if state.lock.is_none() {
+        let window = state.space.element_under(location).map(|(window, _)| window.clone());
+        if let Some(window) = window {
+            shell::focus_window(state, Some(&window), serial);
+        }
+    }
+    let under = surface_under(state, location);
+    touch.down(
+        state,
+        under,
+        &DownEvent {
+            slot: event.slot(),
+            location,
+            serial,
+            time: event.time_msec(),
+        },
+    );
+}
+
+fn touch_motion<B: InputBackend>(state: &mut Slate, event: B::TouchMotionEvent) {
+    let Some(touch) = state.seat.get_touch() else {
+        return;
+    };
+    let location = touch_location::<_, B>(state, &event);
+    let under = surface_under(state, location);
+    touch.motion(
+        state,
+        under,
+        &TouchMotionEvent {
+            slot: event.slot(),
+            location,
+            time: event.time_msec(),
+        },
+    );
+}
+
+fn touch_up<B: InputBackend>(state: &mut Slate, event: B::TouchUpEvent) {
+    let Some(touch) = state.seat.get_touch() else {
+        return;
+    };
+    touch.up(
+        state,
+        &UpEvent {
+            slot: event.slot(),
+            serial: SERIAL_COUNTER.next_serial(),
+            time: event.time_msec(),
+        },
+    );
 }
 
 fn mod_pressed(mod_key: ModKey, modifiers: &ModifiersState) -> bool {
@@ -128,6 +317,14 @@ pub(super) fn run(state: &mut Slate, action: Action) {
             }
         }
         Action::Quit => state.loop_signal.stop(),
+        Action::WorkspaceNext => shell::switch_relative(state, true),
+        Action::WorkspacePrevious => shell::switch_relative(state, false),
+        Action::FocusMonitor(direction) => super::monitors::focus_monitor(state, direction),
+        Action::MoveToMonitor(direction) => {
+            if let Some(window) = shell::focused_window(state) {
+                super::monitors::move_to_monitor(state, &window, direction);
+            }
+        }
         Action::Scratchpad(name) => shell::toggle_scratchpad(state, &name),
         Action::Reload => state.reload_settings(),
         Action::Restart => tracing::warn!("restart is only supported by the X11 backend"),

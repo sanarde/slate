@@ -10,6 +10,7 @@ mod handlers;
 mod input;
 mod ipc;
 mod lock;
+mod monitors;
 mod output_management;
 mod outputs;
 mod render;

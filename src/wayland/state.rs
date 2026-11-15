@@ -78,6 +78,7 @@ pub struct Slate {
     pub animations: Animations,
     pub next_window_id: u64,
     pub last_focus: Option<u64>,
+    pub swipe: Option<(f64, f64)>,
     pub ipc: Option<Ipc>,
     pub foreign_toplevel: ForeignToplevelState,
     pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
@@ -166,6 +167,7 @@ impl Slate {
         let mut seat = seat_state.new_wl_seat(&display_handle, "seat0");
         seat.add_keyboard(xkb_config(&settings.xkb), settings.repeat_delay, settings.repeat_rate)?;
         seat.add_pointer();
+        seat.add_touch();
 
         Ok(Slate {
             start_time: Instant::now(),
@@ -181,6 +183,7 @@ impl Slate {
             animations: Animations::default(),
             next_window_id: 0,
             last_focus: None,
+            swipe: None,
             ipc: None,
             foreign_toplevel: ForeignToplevelState::new(&display_handle),
             shadows: RefCell::new(HashMap::new()),
