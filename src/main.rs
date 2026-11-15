@@ -8,6 +8,7 @@ mod font;
 mod ipc;
 mod json;
 mod layout;
+mod monitors;
 mod rules;
 mod scheme;
 mod session;

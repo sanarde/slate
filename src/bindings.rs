@@ -2,6 +2,8 @@
 
 use smithay::input::keyboard::xkb;
 
+use crate::monitors::Direction;
+
 pub const WORKSPACE_KEYS: usize = 9;
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -44,6 +46,10 @@ pub enum Action {
     Promote,
     SwapNext,
     SwapPrevious,
+    WorkspaceNext,
+    WorkspacePrevious,
+    FocusMonitor(Direction),
+    MoveToMonitor(Direction),
     Scratchpad(String),
     Reload,
     Restart,
@@ -211,6 +217,10 @@ pub fn parse_action(text: &str) -> Result<Option<Action>, String> {
         "restore" => Action::RestoreMinimized,
         "fullscreen" => Action::Fullscreen,
         "quit" => Action::Quit,
+        "workspace-next" => Action::WorkspaceNext,
+        "workspace-prev" => Action::WorkspacePrevious,
+        "focus-monitor" => Action::FocusMonitor(Direction::parse(argument)?),
+        "move-to-monitor" => Action::MoveToMonitor(Direction::parse(argument)?),
         "reload" => Action::Reload,
         "restart" => Action::Restart,
         "scratchpad" => {
