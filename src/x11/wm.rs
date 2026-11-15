@@ -23,6 +23,7 @@ use super::geometry::{Rect, Strut};
 use super::keys;
 mod frame;
 mod ipc;
+mod monitors;
 mod tiling;
 
 use frame::Insets;
@@ -1571,6 +1572,17 @@ impl Wm {
                 }
             }
             Action::Quit => self.running = false,
+            Action::WorkspaceNext => {
+                let target = (self.workspace + 1).min(self.settings.workspace_count.saturating_sub(1));
+                self.switch_workspace(target)?
+            }
+            Action::WorkspacePrevious => self.switch_workspace(self.workspace.saturating_sub(1))?,
+            Action::FocusMonitor(direction) => self.focus_monitor(direction)?,
+            Action::MoveToMonitor(direction) => {
+                if let Some(window) = self.focused {
+                    self.move_to_monitor(window, direction)?;
+                }
+            }
             Action::Reload => self.reload_settings()?,
             Action::Restart => self.restart()?,
             Action::Scratchpad(name) => self.toggle_scratchpad(&name)?,
