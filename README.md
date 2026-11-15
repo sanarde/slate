@@ -58,7 +58,11 @@ Key bindings. Mod is Super, except in `winit` where it is Alt.
 | Mod+right button, drag | Resize the window |
 | Ctrl+Alt+F1 to F12 | Switch virtual terminal (`udev` only) |
 
-Focus follows clicks. The Wayland backend implements xdg-shell, wlr-layer-shell, xdg-output, the data device and XWayland. The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE`, `_NET_CURRENT_DESKTOP` and RandR monitors. There are nine workspaces shared by all outputs.
+Focus follows clicks. There are nine workspaces shared by all outputs.
+
+The Wayland backend implements xdg-shell, wlr-layer-shell, wlr-output-management, linux-dmabuf, xdg-output, xdg-activation, the data device and primary selection, viewporter, cursor-shape, relative-pointer, pointer-gestures, single-pixel-buffer, idle-notify and XWayland. Output management supports position, scale, transform, mode and enabling or disabling outputs. Fractional scales are rounded up for clients. In a nested `winit` window only position and scale can change.
+
+The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE` including above, fullscreen and maximized at map time, `_NET_CURRENT_DESKTOP`, the `WM_HINTS` input flag and RandR monitors.
 
 ## Settings
 
@@ -86,7 +90,7 @@ cfgd set /org/nuros/sanar/slate/xkb-options 'grp:alt_shift_toggle'
 - Tiling layout as a setting, floating stays the default.
 - Configurable key bindings.
 - Server-side decorations (xdg-decoration).
-- Screen capture, idle and session lock protocols.
+- Fractional scale protocol, text input and the session lock and screen capture protocols.
 
 ## Acknowledgments
 
