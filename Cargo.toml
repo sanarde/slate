@@ -7,6 +7,14 @@ edition = "2024"
 description = "Window manager of SanarDE for Wayland and X11"
 license = "GPL-3.0-only"
 
+[[bin]]
+name = "slate"
+path = "src/main.rs"
+
+[[bin]]
+name = "slatectl"
+path = "src/bin/slatectl.rs"
+
 [dependencies]
 smithay = { version = "0.7.0", default-features = false, features = [
     "backend_drm",

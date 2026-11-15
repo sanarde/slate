@@ -5,6 +5,8 @@ mod cfgd;
 mod conf;
 mod config;
 mod font;
+mod ipc;
+mod json;
 mod layout;
 mod scheme;
 mod source;
