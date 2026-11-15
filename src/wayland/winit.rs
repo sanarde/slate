@@ -13,6 +13,7 @@ use super::input;
 use super::output_management;
 use super::outputs;
 use super::render::{self, CLEAR_COLOR};
+use super::screencopy;
 use super::state::Slate;
 
 const REFRESH_MHZ: i32 = 60_000;
@@ -76,7 +77,7 @@ fn redraw(
 
     let damage = {
         let (renderer, mut framebuffer) = backend.bind()?;
-        let elements = render::output_elements(state, renderer, output);
+        let elements = render::output_elements(state, renderer, output, true);
         let result = damage_tracker.render_output(renderer, &mut framebuffer, age, &elements, CLEAR_COLOR)?;
         result.damage.cloned()
     };
@@ -85,6 +86,7 @@ fn redraw(
         backend.submit(Some(&damage))?;
     }
 
+    screencopy::process(state, backend.renderer(), output);
     state.send_frames(output);
     Ok(())
 }

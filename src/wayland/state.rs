@@ -38,6 +38,7 @@ use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
 use super::output_management::OutputManagementState;
 use super::outputs::OutputRecord;
+use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::cfgd::Cfgd;
 use crate::config::Settings;
@@ -61,6 +62,7 @@ pub struct Slate {
     pub workspace: usize,
     pub outputs: Vec<OutputRecord>,
     pub output_management: OutputManagementState,
+    pub screencopy: ScreencopyState,
     pub resizing: Option<Resizing>,
     pub popups: PopupManager,
     pub compositor_state: CompositorState,
@@ -144,6 +146,7 @@ impl Slate {
             workspace: 0,
             outputs: Vec::new(),
             output_management: OutputManagementState::new(&display_handle),
+            screencopy: ScreencopyState::new(&display_handle),
             resizing: None,
             popups: PopupManager::default(),
             compositor_state: CompositorState::new::<Slate>(&display_handle),

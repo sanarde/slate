@@ -22,13 +22,18 @@ render_elements! {
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
-pub fn output_elements(state: &mut Slate, renderer: &mut GlesRenderer, output: &Output) -> Vec<OutputElement> {
+pub fn output_elements(
+    state: &mut Slate,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    with_cursor: bool,
+) -> Vec<OutputElement> {
     let mut elements = Vec::new();
 
     if let Some(output_geometry) = state.space.output_geometry(output) {
         let scale = output.current_scale().fractional_scale();
         let pointer = state.seat.get_pointer().unwrap().current_location();
-        if output_geometry.to_f64().contains(pointer) {
+        if with_cursor && output_geometry.to_f64().contains(pointer) {
             let location = pointer - output_geometry.loc.to_f64();
             cursor_elements(state, renderer, location, scale, &mut elements);
         }

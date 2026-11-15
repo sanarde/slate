@@ -6,6 +6,7 @@ use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::{Logical, Point, Transform};
 
 use super::output_management;
+use super::screencopy;
 use super::state::Slate;
 use super::udev;
 
@@ -60,6 +61,7 @@ pub fn register(state: &mut Slate, output: &Output, position: Point<i32, Logical
 }
 
 pub fn unregister(state: &mut Slate, output: &Output) {
+    screencopy::cancel_output(state, output);
     state.space.unmap_output(output);
     for layer in layer_map_for_output(output).layers() {
         layer.layer_surface().send_close();

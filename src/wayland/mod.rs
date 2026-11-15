@@ -8,6 +8,7 @@ mod input;
 mod output_management;
 mod outputs;
 mod render;
+mod screencopy;
 mod settings;
 mod shell;
 mod state;

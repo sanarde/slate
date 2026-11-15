@@ -29,6 +29,7 @@ use smithay::utils::DeviceFd;
 
 use super::input;
 use super::outputs;
+use super::screencopy;
 use super::render::{self, CLEAR_COLOR};
 use super::state::Slate;
 use crate::config::Settings;
@@ -462,7 +463,7 @@ fn render(state: &mut Slate, crtc: crtc::Handle) {
 }
 
 fn render_surface(state: &mut Slate, renderer: &mut GlesRenderer, surface: &mut Surface) {
-    let elements = render::output_elements(state, renderer, &surface.output);
+    let elements = render::output_elements(state, renderer, &surface.output, true);
     let result = surface
         .compositor
         .render_frame(renderer, &elements, CLEAR_COLOR, FrameFlags::DEFAULT);
@@ -481,6 +482,7 @@ fn render_surface(state: &mut Slate, renderer: &mut GlesRenderer, surface: &mut 
         Err(error) => tracing::warn!(%error, "failed to render the frame"),
     }
 
+    screencopy::process(state, renderer, &surface.output);
     state.send_frames(&surface.output);
 }
 
