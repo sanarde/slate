@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+pub mod decoration;
 pub mod dmabuf;
 pub mod layer;
 pub mod protocols;
