@@ -115,6 +115,12 @@ fn run(state: &mut Slate, action: Action) {
                 shell::toggle_maximized(state, &window);
             }
         }
+        Action::Minimize => {
+            if let Some(window) = shell::focused_window(state) {
+                shell::minimize_window(state, &window);
+            }
+        }
+        Action::RestoreMinimized => shell::restore_last_minimized(state),
         Action::Fullscreen => {
             if let Some(window) = shell::focused_window(state) {
                 shell::toggle_fullscreen(state, &window);

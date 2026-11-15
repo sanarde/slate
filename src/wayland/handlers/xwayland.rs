@@ -169,6 +169,18 @@ impl XwmHandler for Slate {
         }
     }
 
+    fn minimize_request(&mut self, _xwm: XwmId, surface: X11Surface) {
+        if let Some(window) = shell::window_for_x11(self, &surface) {
+            shell::minimize_window(self, &window);
+        }
+    }
+
+    fn unminimize_request(&mut self, _xwm: XwmId, surface: X11Surface) {
+        if let Some(window) = shell::window_for_x11(self, &surface) {
+            shell::restore_window(self, &window);
+        }
+    }
+
     fn resize_request(&mut self, _xwm: XwmId, surface: X11Surface, _button: u32, edge: ResizeEdge) {
         let Some(window) = shell::window_for_x11(self, &surface) else {
             return;

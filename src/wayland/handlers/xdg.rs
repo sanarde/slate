@@ -79,6 +79,12 @@ impl XdgShellHandler for Slate {
         }
     }
 
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = shell::window_for_surface(self, surface.wl_surface()) {
+            shell::minimize_window(self, &window);
+        }
+    }
+
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         if let Some(window) = shell::window_for_surface(self, surface.wl_surface()) {
             shell::set_fullscreen(self, &window, false);

@@ -35,6 +35,7 @@ pub fn window_for_surface(state: &Slate, surface: &WlSurface) -> Option<Window> 
         .elements()
         .chain(state.pending_windows.iter())
         .chain(state.parked.iter().map(|(window, _)| window))
+        .chain(state.minimized.iter().map(|(window, _)| window))
         .find(|window| window.toplevel().is_some_and(|toplevel| toplevel.wl_surface() == surface))
         .cloned()
 }
@@ -44,6 +45,7 @@ pub fn window_for_x11(state: &Slate, surface: &X11Surface) -> Option<Window> {
         .space
         .elements()
         .chain(state.parked.iter().map(|(window, _)| window))
+        .chain(state.minimized.iter().map(|(window, _)| window))
         .find(|window| window.x11_surface() == Some(surface))
         .cloned()
 }
@@ -80,6 +82,7 @@ fn place_window(state: &mut Slate, window: Window) {
 pub fn unmap_window(state: &mut Slate, window: &Window) {
     state.pending_windows.retain(|pending| pending != window);
     state.parked.retain(|(parked, _)| parked != window);
+    state.minimized.retain(|(minimized, _)| minimized != window);
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
 
@@ -203,7 +206,62 @@ pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
 }
 
+pub fn minimize_window(state: &mut Slate, window: &Window) {
+    if state.minimized.iter().any(|(minimized, _)| minimized == window) {
+        return;
+    }
+    let Some(location) = state.space.element_location(window) else {
+        return;
+    };
+
+    state.minimized.push((window.clone(), location));
+    state.space.unmap_elem(window);
+    grabs::forget_window(state, window);
+    if state.decoration_hover.as_ref().is_some_and(|(hovered, _)| hovered == window) {
+        state.decoration_hover = None;
+    }
+    window.set_activated(false);
+    if let Some(toplevel) = window.toplevel() {
+        toplevel.send_pending_configure();
+    }
+
+    let top = state.space.elements().next_back().cloned();
+    focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+}
+
+pub fn restore_window(state: &mut Slate, window: &Window) {
+    let Some(index) = state.minimized.iter().position(|(minimized, _)| minimized == window) else {
+        return;
+    };
+    let (window, location) = state.minimized.remove(index);
+
+    let workspace = workspace_of(&window);
+    if workspace != state.workspace {
+        switch_workspace(state, workspace);
+    }
+    state.space.map_element(window.clone(), location, true);
+    scale::update(state);
+    focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+}
+
+pub fn restore_last_minimized(state: &mut Slate) {
+    if let Some((window, _)) = state.minimized.last().cloned() {
+        restore_window(state, &window);
+    }
+}
+
 pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
+    let minimized = state
+        .minimized
+        .iter()
+        .map(|(window, _)| window)
+        .find(|window| window.wl_surface().as_deref() == Some(surface))
+        .cloned();
+    if let Some(window) = minimized {
+        restore_window(state, &window);
+        return;
+    }
+
     let window = state
         .space
         .elements()
