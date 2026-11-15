@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+mod bindings;
 mod cfgd;
 mod config;
 mod spawn;

@@ -1,0 +1,246 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+use smithay::input::keyboard::xkb;
+
+pub const WORKSPACE_KEYS: usize = 9;
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct Modifiers {
+    pub primary: bool,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct Required {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum Action {
+    Terminal,
+    Close,
+    Maximize,
+    Fullscreen,
+    Quit,
+    Workspace(usize),
+    MoveToWorkspace(usize),
+    FocusNext,
+    FocusPrevious,
+    Exec(Vec<String>),
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Binding {
+    pub modifiers: Modifiers,
+    pub keysym: u32,
+    pub action: Action,
+}
+
+impl Modifiers {
+    pub fn required(&self, primary_is_alt: bool) -> Required {
+        Required {
+            shift: self.shift,
+            ctrl: self.ctrl,
+            alt: self.alt || (self.primary && primary_is_alt),
+            logo: self.logo || (self.primary && !primary_is_alt),
+        }
+    }
+}
+
+pub fn normalize(keysym: u32) -> u32 {
+    if (0x41..=0x5a).contains(&keysym) { keysym + 0x20 } else { keysym }
+}
+
+fn named(name: &str) -> Option<u32> {
+    let keysym = xkb::keysym_from_name(name, xkb::KEYSYM_NO_FLAGS);
+    let keysym = if keysym.raw() == 0 {
+        xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE)
+    } else {
+        keysym
+    };
+    (keysym.raw() != 0).then(|| normalize(keysym.raw()))
+}
+
+fn binding(primary: bool, shift: bool, key: &str, action: Action) -> Binding {
+    Binding {
+        modifiers: Modifiers {
+            primary,
+            shift,
+            ..Modifiers::default()
+        },
+        keysym: named(key).expect("built in key names are valid"),
+        action,
+    }
+}
+
+pub fn defaults() -> Vec<Binding> {
+    let mut bindings = vec![
+        binding(true, false, "Return", Action::Terminal),
+        binding(true, false, "q", Action::Close),
+        binding(true, false, "m", Action::Maximize),
+        binding(true, false, "f", Action::Fullscreen),
+        binding(true, true, "e", Action::Quit),
+        binding(true, false, "Tab", Action::FocusNext),
+        binding(true, true, "Tab", Action::FocusPrevious),
+    ];
+    for index in 0..WORKSPACE_KEYS {
+        let key = (index + 1).to_string();
+        bindings.push(binding(true, false, &key, Action::Workspace(index)));
+        bindings.push(binding(true, true, &key, Action::MoveToWorkspace(index)));
+    }
+    bindings
+}
+
+fn parse_modifiers(tokens: &[&str]) -> Result<Modifiers, String> {
+    let mut modifiers = Modifiers::default();
+    for token in tokens {
+        match token.to_ascii_lowercase().as_str() {
+            "mod" => modifiers.primary = true,
+            "super" | "logo" | "win" => modifiers.logo = true,
+            "alt" => modifiers.alt = true,
+            "ctrl" | "control" => modifiers.ctrl = true,
+            "shift" => modifiers.shift = true,
+            other => return Err(format!("unknown modifier {other}")),
+        }
+    }
+    Ok(modifiers)
+}
+
+fn parse_workspace(argument: &str) -> Result<usize, String> {
+    let number: usize = argument.trim().parse().map_err(|_| "the workspace is not a number".to_string())?;
+    if number == 0 {
+        return Err("workspaces are numbered from 1".to_string());
+    }
+    Ok(number - 1)
+}
+
+fn parse_action(text: &str) -> Result<Option<Action>, String> {
+    let text = text.trim();
+    let (name, argument) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
+
+    Ok(Some(match name {
+        "none" => return Ok(None),
+        "terminal" => Action::Terminal,
+        "close" => Action::Close,
+        "maximize" => Action::Maximize,
+        "fullscreen" => Action::Fullscreen,
+        "quit" => Action::Quit,
+        "focus-next" => Action::FocusNext,
+        "focus-prev" => Action::FocusPrevious,
+        "workspace" => Action::Workspace(parse_workspace(argument)?),
+        "move-to-workspace" => Action::MoveToWorkspace(parse_workspace(argument)?),
+        "exec" => {
+            let command: Vec<String> = argument.split_whitespace().map(String::from).collect();
+            if command.is_empty() {
+                return Err("exec needs a command".to_string());
+            }
+            Action::Exec(command)
+        }
+        other => return Err(format!("unknown action {other}")),
+    }))
+}
+
+fn parse_entry(entry: &str) -> Result<(Modifiers, u32, Option<Action>), String> {
+    let (combo, action) = entry.split_once('=').ok_or("expected COMBO=ACTION")?;
+    let tokens: Vec<&str> = combo.split('+').map(str::trim).collect();
+    let (key, modifiers) = tokens.split_last().ok_or("the combination is empty")?;
+
+    let modifiers = parse_modifiers(modifiers)?;
+    let keysym = named(key).ok_or_else(|| format!("unknown key {key}"))?;
+    Ok((modifiers, keysym, parse_action(action)?))
+}
+
+pub fn parse(entries: &[String]) -> Vec<Binding> {
+    let mut bindings = defaults();
+
+    for entry in entries {
+        match parse_entry(entry) {
+            Ok((modifiers, keysym, action)) => {
+                bindings.retain(|existing| !(existing.modifiers == modifiers && existing.keysym == keysym));
+                if let Some(action) = action {
+                    bindings.push(Binding {
+                        modifiers,
+                        keysym,
+                        action,
+                    });
+                }
+            }
+            Err(error) => tracing::warn!(entry, error, "ignoring a key binding"),
+        }
+    }
+    bindings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(list: &[&str]) -> Vec<String> {
+        list.iter().map(|entry| entry.to_string()).collect()
+    }
+
+    fn find<'a>(bindings: &'a [Binding], modifiers: Modifiers, key: &str) -> Option<&'a Binding> {
+        let keysym = named(key).unwrap();
+        bindings
+            .iter()
+            .find(|binding| binding.modifiers == modifiers && binding.keysym == keysym)
+    }
+
+    const PRIMARY: Modifiers = Modifiers {
+        primary: true,
+        shift: false,
+        ctrl: false,
+        alt: false,
+        logo: false,
+    };
+
+    #[test]
+    fn defaults_cover_the_documented_keys() {
+        let bindings = defaults();
+        assert!(find(&bindings, PRIMARY, "Return").is_some_and(|binding| binding.action == Action::Terminal));
+        assert!(find(&bindings, PRIMARY, "9").is_some_and(|binding| binding.action == Action::Workspace(8)));
+    }
+
+    #[test]
+    fn entries_add_replace_and_remove() {
+        let bindings = parse(&entries(&[
+            "Mod+b=exec firefox --new-window",
+            "Mod+Return=exec foot -e htop",
+            "Mod+q=none",
+            "Ctrl+Alt+Delete=quit",
+        ]));
+
+        let browser = find(&bindings, PRIMARY, "b").unwrap();
+        assert!(browser.action == Action::Exec(vec!["firefox".to_string(), "--new-window".to_string()]));
+        assert!(find(&bindings, PRIMARY, "Return").is_some_and(|binding| matches!(binding.action, Action::Exec(_))));
+        assert!(find(&bindings, PRIMARY, "q").is_none());
+
+        let quit = Modifiers {
+            ctrl: true,
+            alt: true,
+            ..Modifiers::default()
+        };
+        assert!(find(&bindings, quit, "Delete").is_some_and(|binding| binding.action == Action::Quit));
+    }
+
+    #[test]
+    fn bad_entries_are_ignored_and_letters_are_case_insensitive() {
+        let bindings = parse(&entries(&["Mod+Q=close", "Hyper+x=quit", "Mod+nosuchkey=quit", "garbage", "Mod+9=workspace 0"]));
+        assert_eq!(bindings.len(), defaults().len());
+        assert!(find(&bindings, PRIMARY, "q").is_some());
+    }
+
+    #[test]
+    fn the_primary_modifier_follows_the_setting() {
+        let required = PRIMARY.required(true);
+        assert!(required.alt && !required.logo);
+        let required = PRIMARY.required(false);
+        assert!(required.logo && !required.alt);
+    }
+}
