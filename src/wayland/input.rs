@@ -34,6 +34,7 @@ enum Action {
 }
 
 pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
+    state.idle_notifier_state.notify_activity(&state.seat);
     match event {
         InputEvent::Keyboard { event } => keyboard_key::<B>(state, event),
         InputEvent::PointerMotion { event } => pointer_motion::<B>(state, event),

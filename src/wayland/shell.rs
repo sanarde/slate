@@ -194,6 +194,24 @@ pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
 }
 
+pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
+    let window = state
+        .space
+        .elements()
+        .chain(state.parked.iter().map(|(window, _)| window))
+        .find(|window| window.wl_surface().as_deref() == Some(surface))
+        .cloned();
+    let Some(window) = window else {
+        return;
+    };
+
+    let workspace = workspace_of(&window);
+    if workspace != state.workspace {
+        switch_workspace(state, workspace);
+    }
+    focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
+}
+
 pub fn focused_window(state: &Slate) -> Option<Window> {
     let focus = state.seat.get_keyboard()?.current_focus()?;
     state
