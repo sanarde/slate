@@ -71,6 +71,20 @@ theme = material-you
 #titlebar-middle-click = none
 #titlebar-right-click = none
 
+# Tiling ----------------------------------------------------------------------------------------
+
+# floating, master-stack, spiral, grid or monocle. The layout of a workspace can be changed
+# while Slate runs with Mod+t and Mod+space.
+#layout = floating
+#tiling-gap = 8
+#tiling-outer-gap = 8
+#master-ratio = 55
+#master-count = 1
+
+# Applications that stay floating in a tiling layout.
+#float = pavucontrol
+#float = org.gnome.Calculator
+
 # Behavior --------------------------------------------------------------------------------------
 
 # auto is Super, or Alt in a nested window.
@@ -93,7 +107,8 @@ theme = material-you
 
 # These add to the built in bindings or replace the ones with the same combination.
 # Actions: terminal, close, maximize, minimize, restore, fullscreen, quit, focus-next, focus-prev, workspace N,
-# move-to-workspace N, exec COMMAND, none (removes a binding).
+# move-to-workspace N, toggle-tiling, layout-next, toggle-floating, master-grow, master-shrink,
+# master-more, master-fewer, promote, swap-next, swap-prev, exec COMMAND, none (removes a binding).
 #bind = Mod+d=exec rofi -show drun
 #bind = Mod+b=exec firefox
 #bind = Mod+Return=exec foot -e fish

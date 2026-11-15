@@ -66,6 +66,13 @@ Key bindings. Mod is Super, except in `winit` where it is Alt. The bindings belo
 | Mod+n | Minimize the focused window |
 | Mod+Shift+n | Restore the window that was minimized last |
 | Mod+Tab, Mod+Shift+Tab | Focus the next or the previous window |
+| Mod+t | Switch the workspace between floating and its tiling layout |
+| Mod+space | Next layout of the workspace |
+| Mod+Shift+space | Toggle floating for the focused window |
+| Mod+l, Mod+h | Grow or shrink the master area |
+| Mod+comma, Mod+period | More or fewer windows in the master area |
+| Mod+Shift+Return | Make the focused window the master |
+| Mod+Shift+j, Mod+Shift+k | Swap the focused window with the next or the previous one |
 | Mod+1 to Mod+9 | Switch to a workspace |
 | Mod+Shift+1 to Mod+Shift+9 | Move the focused window to a workspace |
 | Mod+Shift+e | Quit |
@@ -125,6 +132,7 @@ rule = foot=none                     # repeat for more decoration rules
 - `$name` is a variable. A theme defines its palette as variables, so defining the same variable in `slate.conf` recolors the theme.
 - `@role` is a role of the Material You scheme: `primary`, `on_primary`, `primary_container`, `surface`, `on_surface`, `surface_container_high`, `outline`, `outline_variant`, `error` and the other roles of Seurat. `@role/NN` sets the alpha to NN percent. Without Seurat the roles come from the built in baseline palette, `color-scheme` selects its light or dark variant.
 - `bind` and `rule` add a line to `bindings` and `decoration-rules`. Those keys also accept a list separated by `;`.
+- `bind`, `rule` and `float` add a line to `bindings`, `decoration-rules` and `floating-rules`.
 - A comment starts with `#` at the start of a line or after a space. A color such as `#6750a4` is not a comment.
 
 ### Themes
@@ -156,6 +164,21 @@ xkb-options = grp:alt_shift_toggle
 
 With SanarDE the same through cfgd: `cfgd set /org/nuros/sanar/slate/xkb-layout 'us,ru'`.
 
+### Tiling
+
+Every workspace has a layout. `floating` (the default) leaves windows where they are, the others tile the windows of the workspace on each monitor: `master-stack` (a master area on the left, the others stacked on the right), `spiral`, `grid` and `monocle` (every window fills the area, the focused one is on top). `layout` sets the initial layout of all workspaces, so `layout = master-stack` makes Slate a tiling window manager. `Mod+t` and `Mod+space` change the layout of the current workspace while Slate runs.
+
+Dialogs, windows with a fixed size, windows with a parent and the applications in `float` rules stay floating. Moving a tiled window with `Mod` and the mouse makes it floating. Resizing a tiled window by hand is not supported, use `master-grow` and `master-shrink`.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `layout` | `floating` | `floating`, `master-stack`, `spiral`, `grid` or `monocle`. |
+| `tiling-gap` | 8 | Space between windows. |
+| `tiling-outer-gap` | 8 | Space between windows and the screen edge. |
+| `master-ratio` | 55 | Percent of the screen for the master area, or for the first split of the spiral. |
+| `master-count` | 1 | Windows in the master area. |
+| `floating-rules` | empty | Application ids that always float. In the file `float = APP_ID`. |
+
 ### Key bindings
 
 The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in bindings or replace the ones with the same combination. `COMBO=none` removes a binding. A combination is modifiers and a key joined by `+`. Modifiers are `Mod` (the modifier of `mod-key`), `Super`, `Alt`, `Ctrl` and `Shift`. The key is any xkb keysym name such as `Return`, `Tab`, `F5`, `Print`, `XF86AudioRaiseVolume` or a letter. Letters match the latin key of the layout, so bindings keep working on a non latin layout.
@@ -163,6 +186,8 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 | Action | Meaning |
 | --- | --- |
 | `terminal`, `close`, `maximize`, `minimize`, `restore`, `fullscreen`, `quit` | As in the table above. `restore` brings back the window that was minimized last. |
+| `toggle-tiling`, `layout-next`, `toggle-floating` | Layout of the workspace and floating of the window. |
+| `master-grow`, `master-shrink`, `master-more`, `master-fewer`, `promote`, `swap-next`, `swap-prev` | Tiling adjustments. |
 | `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
 | `workspace N`, `move-to-workspace N` | N from 1. |
 | `exec COMMAND [ARGUMENT...]` | Start a program, arguments are split at spaces. |
@@ -213,8 +238,7 @@ button-layout = close:maximize
 
 ## Roadmap
 
-- Tiling layout as a setting, floating stays the default.
-- Decorations in the X11 backend, window shadows and a minimize button.
+- Decorations in the X11 backend, window shadows and animations.
 - Text input and ext-image-copy-capture.
 
 ## Acknowledgments

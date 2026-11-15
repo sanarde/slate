@@ -9,6 +9,7 @@ Source layout:
 
 - `src/main.rs`: argument parsing and backend choice.
 - `src/spawn.rs`: starting programs.
+- `src/layout.rs`: tiling layouts as pure geometry, shared by both backends. `src/wayland/tiling.rs` and `src/x11/wm/tiling.rs` apply them.
 - `src/bindings.rs`: parsing and matching of key bindings, shared by both backends.
 - `src/config.rs`: the setting types, their defaults and parsing from values, shared by both backends. `src/source.rs`: the layers (defaults, cfgd, theme, file), variables and color roles, `--dump-config`. `src/conf.rs`: the file format. `src/themes.rs` and `data/themes`: the themes. `src/scheme.rs`: the Seurat client and the baseline palette. `src/cfgd.rs`: libcfgd loaded at run time.
 - `src/wayland`: the Wayland compositor. `state.rs` holds the compositor state, `settings.rs` live changes of settings, `handlers` the protocol handlers, `decoration.rs` frame geometry, hit testing and interaction, `titlebar.rs` and `font.rs` drawing of the titlebar, `outputs.rs` the registry of outputs and applying a configuration, `output_management.rs` the wlr-output-management protocol, `screencopy.rs` the wlr-screencopy protocol, `lock.rs` the session lock, `scale.rs` the fractional scale, `shell.rs` window placement, focus and states, `grabs.rs` interactive move and resize, `input.rs` key bindings and pointer routing, `render.rs` and `cursor.rs` drawing, `winit.rs` and `udev.rs` the backends.
