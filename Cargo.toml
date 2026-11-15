@@ -23,6 +23,6 @@ smithay = { version = "0.7.0", default-features = false, features = [
 ] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-rustix = { version = "1", features = ["event"] }
+rustix = { version = "1", features = ["event", "time"] }
 x11rb = { version = "0.13", features = ["randr"] }
 xcursor = "0.3"
