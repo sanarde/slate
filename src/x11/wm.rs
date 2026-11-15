@@ -23,6 +23,7 @@ use crate::source::ConfigSource;
 use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
+const ICONIC_STATE: u32 = 3;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -57,6 +58,7 @@ struct Client {
     take_focus: bool,
     workspace: usize,
     hidden: bool,
+    minimized: bool,
     pending_unmaps: u32,
     accepts_input: bool,
     above: bool,
@@ -89,6 +91,7 @@ pub struct Wm {
     work_areas: Vec<Rect>,
     drag: Option<Drag>,
     focused: Option<Window>,
+    minimize_order: Vec<Window>,
     workspace: usize,
     settings: Settings,
     config: ConfigSource,
@@ -123,6 +126,7 @@ impl Wm {
             work_areas: Vec::new(),
             drag: None,
             focused: None,
+            minimize_order: Vec::new(),
             workspace: 0,
             mod_mask: mod_mask_of(settings.mod_key),
             settings,
@@ -230,7 +234,7 @@ impl Wm {
                 AtomEnum::CARDINAL,
                 &[last as u32],
             )?;
-            if last == self.workspace && self.clients[index].hidden {
+            if last == self.workspace && self.clients[index].hidden && !self.clients[index].minimized {
                 self.clients[index].hidden = false;
                 self.conn.map_window(window)?;
             }
@@ -299,6 +303,7 @@ impl Wm {
             atoms._NET_WM_STATE,
             atoms._NET_WM_STATE_FULLSCREEN,
             atoms._NET_WM_STATE_ABOVE,
+            atoms._NET_WM_STATE_HIDDEN,
             atoms._NET_WM_STATE_MAXIMIZED_VERT,
             atoms._NET_WM_STATE_MAXIMIZED_HORZ,
             atoms._NET_WM_WINDOW_TYPE,
@@ -641,6 +646,7 @@ impl Wm {
             take_focus: protocols.contains(&self.atoms.WM_TAKE_FOCUS),
             workspace: self.workspace,
             hidden: false,
+            minimized: false,
             pending_unmaps: 0,
             accepts_input,
             above: initial_state.contains(&self.atoms._NET_WM_STATE_ABOVE),
@@ -682,7 +688,7 @@ impl Wm {
         self.workspace = target;
 
         for client in &mut self.clients {
-            let visible = client.workspace == target;
+            let visible = client.workspace == target && !client.minimized;
             if visible && client.hidden {
                 client.hidden = false;
                 self.conn.map_window(client.window)?;
@@ -799,11 +805,12 @@ impl Wm {
     }
 
     fn focus(&mut self, window: Window) -> Result<()> {
+        self.minimize_order.retain(|minimized| *minimized != window);
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
         let workspace = self.clients[index].workspace;
-        if workspace != self.workspace {
+        if workspace != self.workspace && !self.clients[index].minimized {
             self.switch_workspace(workspace)?;
         }
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
@@ -831,11 +838,65 @@ impl Wm {
         self.restack()
     }
 
+    fn minimize(&mut self, window: Window) -> Result<()> {
+        let Some(client) = self.clients.iter_mut().find(|client| client.window == window) else {
+            return Ok(());
+        };
+        if client.minimized {
+            return Ok(());
+        }
+        client.minimized = true;
+        if !client.hidden {
+            client.hidden = true;
+            client.pending_unmaps += 1;
+            self.conn.unmap_window(window)?;
+        }
+        self.minimize_order.push(window);
+        self.apply_state(window)?;
+
+        if self.focused == Some(window) {
+            self.focused = None;
+            let current = self.workspace;
+            match self.focus_candidate(current) {
+                Some(top) => self.focus(top)?,
+                None => {
+                    self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
+                    self.set_active_window(NONE)?;
+                    self.update_borders()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn restore(&mut self, window: Window) -> Result<()> {
+        let Some(client) = self.clients.iter_mut().find(|client| client.window == window) else {
+            return Ok(());
+        };
+        if !client.minimized {
+            return Ok(());
+        }
+        client.minimized = false;
+        let workspace = client.workspace;
+        self.minimize_order.retain(|minimized| *minimized != window);
+
+        if workspace != self.workspace {
+            self.switch_workspace(workspace)?;
+        } else if let Some(client) = self.clients.iter_mut().find(|client| client.window == window)
+            && client.hidden
+        {
+            client.hidden = false;
+            self.conn.map_window(window)?;
+        }
+        self.apply_state(window)?;
+        self.focus(window)
+    }
+
     fn focus_candidate(&self, workspace: usize) -> Option<Window> {
         self.clients
             .iter()
             .rev()
-            .find(|client| client.workspace == workspace && (client.accepts_input || client.take_focus))
+            .find(|client| client.workspace == workspace && !client.minimized && (client.accepts_input || client.take_focus))
             .map(|client| client.window)
     }
 
@@ -912,9 +973,16 @@ impl Wm {
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
-        let (maximized, fullscreen, above, current, restore) = {
+        let (maximized, fullscreen, above, minimized, current, restore) = {
             let client = &self.clients[index];
-            (client.maximized, client.fullscreen, client.above, client.rect, client.restore)
+            (
+                client.maximized,
+                client.fullscreen,
+                client.above,
+                client.minimized,
+                client.rect,
+                client.restore,
+            )
         };
         let monitor = self.monitor_index(&current);
 
@@ -943,6 +1011,9 @@ impl Wm {
         }
         if above {
             states.push(self.atoms._NET_WM_STATE_ABOVE);
+        }
+        if minimized {
+            states.push(self.atoms._NET_WM_STATE_HIDDEN);
         }
         if maximized {
             states.push(self.atoms._NET_WM_STATE_MAXIMIZED_VERT);
@@ -1012,7 +1083,16 @@ impl Wm {
         let data = event.data.as_data32();
 
         if event.type_ == atoms._NET_ACTIVE_WINDOW {
+            if self.clients.iter().any(|client| client.window == event.window && client.minimized) {
+                return self.restore(event.window);
+            }
             return self.focus(event.window);
+        }
+        if event.type_ == atoms.WM_CHANGE_STATE {
+            if data[0] == ICONIC_STATE {
+                return self.minimize(event.window);
+            }
+            return Ok(());
         }
         if event.type_ == atoms._NET_CLOSE_WINDOW {
             return self.close(event.window);
@@ -1113,6 +1193,16 @@ impl Wm {
                 if let Some(client) = focused.and_then(|window| self.clients.iter().find(|client| client.window == window)) {
                     let fullscreen = !client.fullscreen;
                     self.set_state(client.window, None, Some(fullscreen))?;
+                }
+            }
+            Action::Minimize => {
+                if let Some(window) = focused {
+                    self.minimize(window)?;
+                }
+            }
+            Action::RestoreMinimized => {
+                if let Some(window) = self.minimize_order.last().copied() {
+                    self.restore(window)?;
                 }
             }
             Action::Quit => self.running = false,
