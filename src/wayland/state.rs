@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Instant;
 
+use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{PopupManager, Space, Window, layer_map_for_output};
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatState};
@@ -17,6 +18,8 @@ use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState};
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
@@ -63,6 +66,9 @@ pub struct Slate {
     pub outputs: Vec<OutputRecord>,
     pub output_management: OutputManagementState,
     pub screencopy: ScreencopyState,
+    pub fractional_scale_state: FractionalScaleManagerState,
+    pub session_lock_state: SessionLockManagerState,
+    pub lock: Option<Vec<(Output, LockSurface)>>,
     pub resizing: Option<Resizing>,
     pub popups: PopupManager,
     pub compositor_state: CompositorState,
@@ -147,6 +153,9 @@ impl Slate {
             outputs: Vec::new(),
             output_management: OutputManagementState::new(&display_handle),
             screencopy: ScreencopyState::new(&display_handle),
+            fractional_scale_state: FractionalScaleManagerState::new::<Slate>(&display_handle),
+            session_lock_state: SessionLockManagerState::new::<Slate, _>(&display_handle, |_| true),
+            lock: None,
             resizing: None,
             popups: PopupManager::default(),
             compositor_state: CompositorState::new::<Slate>(&display_handle),
@@ -200,6 +209,10 @@ impl Slate {
 
         for window in self.space.elements() {
             window.send_frame(output, elapsed, None, |_, _| Some(output.clone()));
+        }
+
+        if let Some(surface) = super::lock::surface_for(self, output) {
+            send_frames_surface_tree(&surface, output, elapsed, None, |_, _| Some(output.clone()));
         }
 
         let layers = layer_map_for_output(output);

@@ -5,9 +5,11 @@ mod focus;
 mod grabs;
 mod handlers;
 mod input;
+mod lock;
 mod output_management;
 mod outputs;
 mod render;
+mod scale;
 mod screencopy;
 mod settings;
 mod shell;
@@ -60,6 +62,7 @@ pub fn run(
 fn dispatch_idle(state: &mut Slate) {
     state.space.refresh();
     state.popups.cleanup();
+    lock::prune(state);
     if let Err(error) = state.display_handle.flush_clients() {
         tracing::error!(%error, "failed to flush clients");
     }
