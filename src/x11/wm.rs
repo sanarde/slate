@@ -16,6 +16,7 @@ use x11rb::{CURRENT_TIME, NONE};
 use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
+use crate::bindings::{Action, Binding};
 use crate::cfgd::Cfgd;
 use crate::config::{ModKeySetting, PREFIX, Settings};
 use crate::spawn;
@@ -29,7 +30,6 @@ fn mod_mask_of(setting: ModKeySetting) -> u16 {
     }
 }
 
-const KEYSYM_1: u32 = 0x31;
 const MIN_SIZE: u32 = 32;
 const LEFT_PTR_GLYPH: u16 = 68;
 const LOCK_VARIANTS: [u16; 4] = [0, 2, 16, 18];
@@ -42,16 +42,6 @@ enum Kind {
     Dock,
     Desktop,
     Popup,
-}
-
-#[derive(Clone, Copy)]
-enum Action {
-    Terminal,
-    Close,
-    Maximize,
-    Fullscreen,
-    Quit,
-    Workspace(usize),
 }
 
 struct Client {
@@ -89,7 +79,7 @@ pub struct Wm {
     root: Window,
     screen: Rect,
     atoms: Atoms,
-    bindings: Vec<(Keycode, Action)>,
+    bindings: Vec<(Keycode, Binding)>,
     clients: Vec<Client>,
     docks: Vec<Window>,
     monitors: Vec<Rect>,
@@ -211,7 +201,7 @@ impl Wm {
                 &[self.settings.workspace_count as u32],
             )?;
         }
-        if mod_mask != self.mod_mask || workspaces_changed {
+        if mod_mask != self.mod_mask || old.bindings != self.settings.bindings {
             self.mod_mask = mod_mask;
             self.conn.ungrab_key(0u8, self.root, ModMask::ANY)?;
             self.bindings.clear();
@@ -336,43 +326,47 @@ impl Wm {
         Ok(())
     }
 
+    fn primary_is_alt(&self) -> bool {
+        self.settings.mod_key == ModKeySetting::Alt
+    }
+
+    fn mask_of(&self, binding: &Binding) -> u16 {
+        let required = binding.modifiers.required(self.primary_is_alt());
+        let mut mask = 0;
+        if required.shift {
+            mask |= u16::from(ModMask::SHIFT);
+        }
+        if required.ctrl {
+            mask |= u16::from(ModMask::CONTROL);
+        }
+        if required.alt {
+            mask |= u16::from(ModMask::M1);
+        }
+        if required.logo {
+            mask |= u16::from(ModMask::M4);
+        }
+        mask
+    }
+
     fn grab_keys(&mut self) -> Result<()> {
-        let wanted = [
-            (keys::KEYSYM_RETURN, Action::Terminal),
-            (keys::KEYSYM_Q, Action::Close),
-            (keys::KEYSYM_M, Action::Maximize),
-            (keys::KEYSYM_F, Action::Fullscreen),
-            (keys::KEYSYM_E, Action::Quit),
-        ];
-
-        let digits = (0..self.settings.workspace_count).map(|index| (KEYSYM_1 + index as u32, Action::Workspace(index)));
-        let wanted: Vec<(u32, Action)> = wanted.into_iter().chain(digits).collect();
-
-        for (keysym, action) in wanted {
-            let Some(keycode) = keys::keycode_for(&self.conn, keysym)? else {
-                tracing::warn!(keysym, "key is not present in the keyboard mapping");
+        for binding in self.settings.bindings.clone() {
+            let Some(keycode) = keys::keycode_for(&self.conn, binding.keysym)? else {
+                tracing::warn!(keysym = binding.keysym, "key is not present in the keyboard mapping");
                 continue;
             };
-            let mod4 = self.mod_mask;
-            let shifted = mod4 | u16::from(ModMask::SHIFT);
-            let bases = match action {
-                Action::Quit => vec![shifted],
-                Action::Workspace(_) => vec![mod4, shifted],
-                _ => vec![mod4],
-            };
-            for base in bases {
-                for lock in LOCK_VARIANTS {
-                    self.conn.grab_key(
-                        true,
-                        self.root,
-                        ModMask::from(base | lock),
-                        keycode,
-                        GrabMode::ASYNC,
-                        GrabMode::ASYNC,
-                    )?;
-                }
+
+            let mask = self.mask_of(&binding);
+            for lock in LOCK_VARIANTS {
+                self.conn.grab_key(
+                    true,
+                    self.root,
+                    ModMask::from(mask | lock),
+                    keycode,
+                    GrabMode::ASYNC,
+                    GrabMode::ASYNC,
+                )?;
             }
-            self.bindings.push((keycode, action));
+            self.bindings.push((keycode, binding));
         }
         Ok(())
     }
@@ -1068,15 +1062,47 @@ impl Wm {
         self.restack()
     }
 
+    fn cycle_focus(&mut self, forward: bool) -> Result<()> {
+        let current = self.workspace;
+        let candidates: Vec<Window> = self
+            .clients
+            .iter()
+            .filter(|client| client.workspace == current && !client.hidden && (client.accepts_input || client.take_focus))
+            .map(|client| client.window)
+            .collect();
+        if candidates.len() < 2 {
+            return Ok(());
+        }
+
+        if forward {
+            return self.focus(candidates[0]);
+        }
+        let top = candidates[candidates.len() - 1];
+        self.conn
+            .configure_window(top, &ConfigureWindowAux::new().stack_mode(StackMode::BELOW))?;
+        if let Some(index) = self.clients.iter().position(|client| client.window == top) {
+            let client = self.clients.remove(index);
+            self.clients.insert(0, client);
+        }
+        self.focus(candidates[candidates.len() - 2])
+    }
+
     fn key_press(&mut self, event: &KeyPressEvent) -> Result<()> {
-        let shift = u16::from(event.state) & u16::from(ModMask::SHIFT) != 0;
-        let Some((_, action)) = self.bindings.iter().find(|(keycode, _)| *keycode == event.detail) else {
+        let held = u16::from(event.state)
+            & (u16::from(ModMask::SHIFT) | u16::from(ModMask::CONTROL) | u16::from(ModMask::M1) | u16::from(ModMask::M4));
+        let action = self
+            .bindings
+            .iter()
+            .find(|(keycode, binding)| *keycode == event.detail && self.mask_of(binding) == held)
+            .map(|(_, binding)| binding.action.clone());
+        let Some(action) = action else {
             return Ok(());
         };
         let focused = self.focused;
 
-        match *action {
+        match action {
             Action::Terminal => spawn::spawn(&spawn::terminal_command(self.settings.terminal.as_deref(), "xterm"), &[]),
+            Action::Exec(command) => spawn::spawn(&command, &[]),
             Action::Close => {
                 if let Some(window) = focused {
                     self.close(window)?;
@@ -1095,11 +1121,14 @@ impl Wm {
                 }
             }
             Action::Quit => self.running = false,
-            Action::Workspace(index) => match (shift, focused) {
-                (true, Some(window)) => self.move_to_workspace(window, index)?,
-                (true, None) => {}
-                (false, _) => self.switch_workspace(index)?,
-            },
+            Action::Workspace(index) => self.switch_workspace(index)?,
+            Action::MoveToWorkspace(index) => {
+                if let Some(window) = focused {
+                    self.move_to_workspace(window, index)?;
+                }
+            }
+            Action::FocusNext => self.cycle_focus(true)?,
+            Action::FocusPrevious => self.cycle_focus(false)?,
         }
         Ok(())
     }
