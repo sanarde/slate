@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+use crate::bindings::{self, Binding};
 use crate::cfgd::Cfgd;
 
 pub const PREFIX: &str = "/org/nuros/sanar/slate/";
@@ -181,6 +182,7 @@ pub struct Settings {
     pub tap_to_click: bool,
     pub natural_scroll: bool,
     pub decoration: Decoration,
+    pub bindings: Vec<Binding>,
 }
 
 impl Default for Settings {
@@ -200,6 +202,7 @@ impl Default for Settings {
             tap_to_click: true,
             natural_scroll: false,
             decoration: Decoration::default(),
+            bindings: bindings::defaults(),
         }
     }
 }
@@ -401,6 +404,7 @@ impl Settings {
             tap_to_click: cfgd.get_bool(&key("tap-to-click")).unwrap_or(defaults.tap_to_click),
             natural_scroll: cfgd.get_bool(&key("natural-scroll")).unwrap_or(defaults.natural_scroll),
             decoration: load_decoration(cfgd),
+            bindings: bindings::parse(&cfgd.get_strv(&key("bindings")).unwrap_or_default()),
         }
     }
 }

@@ -249,3 +249,8 @@ type = s
 default = none
 choices = none; maximize; fullscreen; close
 summary = Action of a right click on the titlebar, Wayland only
+
+[bindings]
+type = as
+default =
+summary = Key bindings as COMBO=ACTION that add to or replace the built in ones, for example Mod+b=exec firefox, and COMBO=none removes one
