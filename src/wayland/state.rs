@@ -46,8 +46,8 @@ use super::output_management::OutputManagementState;
 use super::outputs::OutputRecord;
 use super::screencopy::ScreencopyState;
 use super::udev::Udev;
-use crate::cfgd::Cfgd;
 use crate::config::{ButtonKind, Settings};
+use crate::source::ConfigSource;
 use crate::spawn;
 
 #[derive(Clone, Copy)]
@@ -105,7 +105,7 @@ pub struct Slate {
     pub mod_key: ModKey,
     pub default_mod_key: ModKey,
     pub settings: Settings,
-    pub cfgd: Option<Cfgd>,
+    pub config: ConfigSource,
     pub xwm: Option<X11Wm>,
     pub xdisplay: Option<u32>,
     pub udev: Option<Udev>,
@@ -123,7 +123,7 @@ impl Slate {
         event_loop: &EventLoop<'static, Slate>,
         display: Display<Slate>,
         settings: Settings,
-        cfgd: Option<Cfgd>,
+        config: ConfigSource,
         default_mod_key: ModKey,
     ) -> Result<Slate, Box<dyn Error>> {
         let display_handle = display.handle();
@@ -199,7 +199,7 @@ impl Slate {
             mod_key: resolve_mod_key(settings.mod_key, default_mod_key),
             default_mod_key,
             settings,
-            cfgd,
+            config,
             xwm: None,
             xdisplay: None,
             udev: None,

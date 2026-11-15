@@ -26,15 +26,15 @@ use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 
 use crate::Backend;
-use crate::cfgd::Cfgd;
 use crate::config::Settings;
+use crate::source::ConfigSource;
 use state::{ModKey, Slate};
 
 pub fn run(
     backend: Backend,
     command: &[String],
     settings: Settings,
-    cfgd: Option<Cfgd>,
+    config: ConfigSource,
 ) -> Result<(), Box<dyn Error>> {
     let mut event_loop: EventLoop<'static, Slate> = EventLoop::try_new()?;
     let display: Display<Slate> = Display::new()?;
@@ -44,7 +44,7 @@ pub fn run(
     } else {
         ModKey::Alt
     };
-    let mut state = Slate::new(&event_loop, display, settings, cfgd, default_mod_key)?;
+    let mut state = Slate::new(&event_loop, display, settings, config, default_mod_key)?;
     settings::watch(&event_loop, &mut state)?;
 
     if backend == Backend::Udev {

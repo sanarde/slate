@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use std::error::Error;
+use std::time::Duration;
 
 use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 
 use super::cursor::Cursors;
@@ -11,7 +13,9 @@ use super::font::Fonts;
 use super::handlers::decoration::reapply;
 use super::shell;
 use super::state::{ModKey, Slate};
-use crate::config::{ModKeySetting, PREFIX, Settings, Xkb};
+use crate::config::{ModKeySetting, Settings, Xkb};
+
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub fn xkb_config(xkb: &Xkb) -> XkbConfig<'_> {
     XkbConfig {
@@ -32,37 +36,28 @@ pub fn resolve_mod_key(setting: ModKeySetting, default: ModKey) -> ModKey {
 }
 
 pub fn watch(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Result<(), Box<dyn Error>> {
-    let Some(cfgd) = state.cfgd.as_mut() else {
-        return Ok(());
-    };
-    if !cfgd.subscribe(PREFIX) {
-        tracing::warn!("failed to subscribe to cfgd changes");
-        return Ok(());
-    }
-    let Some(fd) = cfgd.notify_fd() else {
-        tracing::warn!("cfgd has no notification descriptor");
-        return Ok(());
-    };
+    let handle = event_loop.handle();
 
-    event_loop
-        .handle()
-        .insert_source(Generic::new(fd, Interest::READ, Mode::Level), |_, _, state| {
+    if let Some(fd) = state.config.notify_fd() {
+        handle.insert_source(Generic::new(fd, Interest::READ, Mode::Level), |_, _, state| {
             state.reload_settings();
             Ok(PostAction::Continue)
         })?;
+    }
+
+    handle.insert_source(Timer::from_duration(POLL_INTERVAL), |_, _, state| {
+        state.reload_settings();
+        TimeoutAction::ToDuration(POLL_INTERVAL)
+    })?;
     Ok(())
 }
 
 impl Slate {
     fn reload_settings(&mut self) {
-        let Some(mut cfgd) = self.cfgd.take() else {
-            return;
-        };
-        if cfgd.dispatch() {
-            let settings = Settings::load(&mut cfgd);
+        if self.config.changed() {
+            let settings = self.config.settings();
             self.apply_settings(settings);
         }
-        self.cfgd = Some(cfgd);
     }
 
     fn apply_settings(&mut self, new: Settings) {
