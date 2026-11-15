@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::element::surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::desktop::space::{SpaceRenderElements, space_render_elements};
+use smithay::desktop::{LayerSurface, layer_map_for_output};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
 use smithay::render_elements;
-use smithay::utils::IsAlive;
+use smithay::utils::{IsAlive, Rectangle, Scale};
+use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::compositor::with_states;
 
+use super::decoration;
+use super::shell;
 use super::state::Slate;
 
 pub const CLEAR_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
 
 render_elements! {
     pub OutputElement<=GlesRenderer>;
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+    Solid=SolidColorRenderElement,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
@@ -50,12 +54,78 @@ pub fn output_elements(
         return elements;
     }
 
-    match space_render_elements(renderer, [&state.space], output, 1.0) {
-        Ok(space) => elements.extend(space.into_iter().map(OutputElement::Space)),
-        Err(error) => tracing::error!(?error, "failed to collect space elements"),
+    scene_elements(state, renderer, output, &mut elements);
+    elements
+}
+
+fn layer_elements(
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    layers: &[&LayerSurface],
+    scale: f64,
+    elements: &mut Vec<OutputElement>,
+) {
+    let map = layer_map_for_output(output);
+    for layer in layers {
+        let Some(geometry) = map.layer_geometry(layer) else {
+            continue;
+        };
+        let rendered: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = layer.render_elements(
+            renderer,
+            geometry.loc.to_physical_precise_round(scale),
+            Scale::from(scale),
+            1.0,
+        );
+        elements.extend(rendered.into_iter().map(OutputElement::Surface));
+    }
+}
+
+fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, elements: &mut Vec<OutputElement>) {
+    let Some(output_geometry) = state.space.output_geometry(output) else {
+        return;
+    };
+    let scale = output.current_scale().fractional_scale();
+    let focused = shell::focused_window(state);
+
+    let layers: Vec<LayerSurface> = layer_map_for_output(output).layers().rev().cloned().collect();
+    let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layers
+        .iter()
+        .partition(|layer| matches!(layer.layer(), Layer::Background | Layer::Bottom));
+
+    layer_elements(renderer, output, &upper, scale, elements);
+
+    for window in state.space.elements().rev() {
+        let Some(bounds) = state.space.element_bbox(window) else {
+            continue;
+        };
+        let framed = decoration::insets(state, window);
+        let reach = Rectangle::new(
+            (bounds.loc.x - framed.left, bounds.loc.y - framed.top).into(),
+            (
+                bounds.size.w + framed.left + framed.right,
+                bounds.size.h + framed.top + framed.bottom,
+            )
+                .into(),
+        );
+        if !output_geometry.overlaps(reach) {
+            continue;
+        }
+
+        if let Some(location) = state.space.element_location(window) {
+            let render_location = location - window.geometry().loc - output_geometry.loc;
+            let surfaces: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = window.render_elements(
+                renderer,
+                render_location.to_physical_precise_round(scale),
+                Scale::from(scale),
+                1.0,
+            );
+            elements.extend(surfaces.into_iter().map(OutputElement::Surface));
+        }
+        let is_focused = focused.as_ref() == Some(window);
+        elements.extend(decoration::elements(state, renderer, window, output_geometry.loc, scale, is_focused));
     }
 
-    elements
+    layer_elements(renderer, output, &lower, scale, elements);
 }
 
 fn cursor_elements(
