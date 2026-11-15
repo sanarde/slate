@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Slate
+Comment=SanarDE window manager on Wayland
+Exec=slate --backend udev
+Type=Application

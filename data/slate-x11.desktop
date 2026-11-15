@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Slate (X11)
+Comment=SanarDE window manager on X11
+Exec=slate --backend x11
+Type=Application
