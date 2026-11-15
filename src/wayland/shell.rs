@@ -221,6 +221,28 @@ pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
 }
 
+pub fn cycle_focus(state: &mut Slate, forward: bool) {
+    let windows: Vec<Window> = state
+        .space
+        .elements()
+        .filter(|window| !is_override_redirect(window))
+        .cloned()
+        .collect();
+    if windows.len() < 2 {
+        return;
+    }
+
+    let target = if forward {
+        windows[0].clone()
+    } else {
+        for window in &windows[..windows.len() - 1] {
+            state.space.raise_element(window, false);
+        }
+        windows[windows.len() - 2].clone()
+    };
+    focus_window(state, Some(&target), SERIAL_COUNTER.next_serial());
+}
+
 pub fn focused_window(state: &Slate) -> Option<Window> {
     let focus = state.seat.get_keyboard()?.current_focus()?;
     state

@@ -17,21 +17,16 @@ use super::grabs::{self, Edges};
 use super::shell;
 use super::state::{ModKey, Slate};
 use super::udev;
+use crate::bindings::{self, Action, Required};
 use crate::spawn;
 
 const BUTTON_LEFT: u32 = 0x110;
 const BUTTON_RIGHT: u32 = 0x111;
 const SCROLL_STEP: f64 = 15.0;
 
-enum Action {
-    Terminal,
-    Close,
-    ToggleMaximized,
-    ToggleFullscreen,
-    Quit,
+enum Pressed {
     SwitchVt(i32),
-    Workspace(usize),
-    MoveToWorkspace(usize),
+    Bound(Action),
 }
 
 pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
@@ -53,32 +48,21 @@ fn mod_pressed(mod_key: ModKey, modifiers: &ModifiersState) -> bool {
     }
 }
 
-fn binding(mod_key: ModKey, modifiers: &ModifiersState, keysym: Keysym, unshifted: Keysym) -> Option<Action> {
-    let raw = keysym.raw();
-    if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&raw) {
-        return Some(Action::SwitchVt((raw - Keysym::XF86_Switch_VT_1.raw() + 1) as i32));
-    }
-    if !mod_pressed(mod_key, modifiers) {
-        return None;
-    }
+fn lookup(state: &Slate, modifiers: &ModifiersState, keysym: u32) -> Option<Action> {
+    let primary_is_alt = matches!(state.mod_key, ModKey::Alt);
+    let held = Required {
+        shift: modifiers.shift,
+        ctrl: modifiers.ctrl,
+        alt: modifiers.alt,
+        logo: modifiers.logo,
+    };
 
-    if (Keysym::_1.raw()..=Keysym::_9.raw()).contains(&unshifted.raw()) {
-        let index = (unshifted.raw() - Keysym::_1.raw()) as usize;
-        return Some(if modifiers.shift {
-            Action::MoveToWorkspace(index)
-        } else {
-            Action::Workspace(index)
-        });
-    }
-
-    match keysym {
-        Keysym::Return => Some(Action::Terminal),
-        Keysym::q | Keysym::Q => Some(Action::Close),
-        Keysym::m | Keysym::M => Some(Action::ToggleMaximized),
-        Keysym::f | Keysym::F => Some(Action::ToggleFullscreen),
-        Keysym::E if modifiers.shift => Some(Action::Quit),
-        _ => None,
-    }
+    state
+        .settings
+        .bindings
+        .iter()
+        .find(|binding| binding.keysym == keysym && binding.modifiers.required(primary_is_alt) == held)
+        .map(|binding| binding.action.clone())
 }
 
 fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) {
@@ -87,47 +71,64 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
     let key_state = event.state();
     let keyboard = state.seat.get_keyboard().unwrap();
 
-    let action = keyboard.input(state, event.key_code(), key_state, serial, time, |state, modifiers, handle| {
+    let pressed = keyboard.input(state, event.key_code(), key_state, serial, time, |state, modifiers, handle| {
         if key_state != KeyState::Pressed {
             return FilterResult::Forward;
         }
-        let raw = handle.raw_syms().first().copied().unwrap_or(handle.modified_sym());
-        match binding(state.mod_key, modifiers, handle.modified_sym(), raw) {
-            Some(Action::SwitchVt(vt)) => FilterResult::Intercept(Action::SwitchVt(vt)),
-            Some(_) if state.lock.is_some() => FilterResult::Forward,
-            Some(action) => FilterResult::Intercept(action),
+
+        let vt = handle.modified_sym().raw();
+        if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&vt) {
+            return FilterResult::Intercept(Pressed::SwitchVt((vt - Keysym::XF86_Switch_VT_1.raw() + 1) as i32));
+        }
+        if state.lock.is_some() {
+            return FilterResult::Forward;
+        }
+
+        let keysym = handle
+            .raw_latin_sym_or_raw_current_sym()
+            .unwrap_or(handle.modified_sym())
+            .raw();
+        match lookup(state, modifiers, bindings::normalize(keysym)) {
+            Some(action) => FilterResult::Intercept(Pressed::Bound(action)),
             None => FilterResult::Forward,
         }
     });
 
-    let Some(action) = action else {
-        return;
-    };
+    match pressed {
+        Some(Pressed::SwitchVt(vt)) => udev::change_vt(state, vt),
+        Some(Pressed::Bound(action)) => run(state, action),
+        None => {}
+    }
+}
+
+fn run(state: &mut Slate, action: Action) {
     match action {
         Action::Terminal => state.spawn(&spawn::terminal_command(state.settings.terminal.as_deref(), "foot")),
+        Action::Exec(command) => state.spawn(&command),
         Action::Close => {
             if let Some(window) = shell::focused_window(state) {
                 shell::close_window(&window);
             }
         }
-        Action::ToggleMaximized => {
+        Action::Maximize => {
             if let Some(window) = shell::focused_window(state) {
                 shell::toggle_maximized(state, &window);
             }
         }
-        Action::ToggleFullscreen => {
+        Action::Fullscreen => {
             if let Some(window) = shell::focused_window(state) {
                 shell::toggle_fullscreen(state, &window);
             }
         }
         Action::Quit => state.loop_signal.stop(),
-        Action::SwitchVt(vt) => udev::change_vt(state, vt),
         Action::Workspace(index) => shell::switch_workspace(state, index),
         Action::MoveToWorkspace(index) => {
             if let Some(window) = shell::focused_window(state) {
                 shell::move_to_workspace(state, &window, index);
             }
         }
+        Action::FocusNext => shell::cycle_focus(state, true),
+        Action::FocusPrevious => shell::cycle_focus(state, false),
     }
 }
 
