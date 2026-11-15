@@ -154,7 +154,7 @@ pub fn insets(state: &Slate, window: &Window) -> Insets {
     insets_with(state, window, maximized, fullscreen)
 }
 
-fn frame_of(content: Rectangle<i32, Logical>, insets: Insets) -> Rectangle<i32, Logical> {
+pub fn frame_of(content: Rectangle<i32, Logical>, insets: Insets) -> Rectangle<i32, Logical> {
     Rectangle::new(
         (content.loc.x - insets.left, content.loc.y - insets.top).into(),
         (
@@ -176,6 +176,11 @@ fn border_color(state: &Slate, focused: bool) -> Color {
     } else {
         state.settings.border_unfocused
     })
+}
+
+pub fn frame_rect(state: &Slate, window: &Window) -> Option<Rectangle<i32, Logical>> {
+    let content = state.space.element_geometry(window)?;
+    Some(frame_of(content, insets(state, window)))
 }
 
 pub fn hit(state: &Slate, location: Point<f64, Logical>) -> Option<(Window, Hit)> {
@@ -459,6 +464,7 @@ pub fn elements(
     origin: Point<i32, Logical>,
     scale: f64,
     focused: bool,
+    alpha: f32,
 ) -> Vec<OutputElement> {
     let (maximized, fullscreen) = shell::flags(window);
     if fullscreen || !framed(state, window) {
@@ -499,7 +505,7 @@ pub fn elements(
             renderer,
             location,
             titlebar,
-            None,
+            Some(alpha),
             None,
             Some(buffer_rect.size),
             Kind::Unspecified,
@@ -515,7 +521,7 @@ pub fn elements(
             buffer,
             location,
             scale,
-            1.0,
+            alpha,
             Kind::Unspecified,
         )));
     }
