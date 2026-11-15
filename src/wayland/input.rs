@@ -29,6 +29,8 @@ enum Action {
     ToggleFullscreen,
     Quit,
     SwitchVt(i32),
+    Workspace(usize),
+    MoveToWorkspace(usize),
 }
 
 pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
@@ -49,13 +51,22 @@ fn mod_pressed(mod_key: ModKey, modifiers: &ModifiersState) -> bool {
     }
 }
 
-fn binding(mod_key: ModKey, modifiers: &ModifiersState, keysym: Keysym) -> Option<Action> {
+fn binding(mod_key: ModKey, modifiers: &ModifiersState, keysym: Keysym, unshifted: Keysym) -> Option<Action> {
     let raw = keysym.raw();
     if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&raw) {
         return Some(Action::SwitchVt((raw - Keysym::XF86_Switch_VT_1.raw() + 1) as i32));
     }
     if !mod_pressed(mod_key, modifiers) {
         return None;
+    }
+
+    if (Keysym::_1.raw()..=Keysym::_9.raw()).contains(&unshifted.raw()) {
+        let index = (unshifted.raw() - Keysym::_1.raw()) as usize;
+        return Some(if modifiers.shift {
+            Action::MoveToWorkspace(index)
+        } else {
+            Action::Workspace(index)
+        });
     }
 
     match keysym {
@@ -78,7 +89,8 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
         if key_state != KeyState::Pressed {
             return FilterResult::Forward;
         }
-        match binding(state.mod_key, modifiers, handle.modified_sym()) {
+        let raw = handle.raw_syms().first().copied().unwrap_or(handle.modified_sym());
+        match binding(state.mod_key, modifiers, handle.modified_sym(), raw) {
             Some(action) => FilterResult::Intercept(action),
             None => FilterResult::Forward,
         }
@@ -106,6 +118,12 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
         }
         Action::Quit => state.loop_signal.stop(),
         Action::SwitchVt(vt) => udev::change_vt(state, vt),
+        Action::Workspace(index) => shell::switch_workspace(state, index),
+        Action::MoveToWorkspace(index) => {
+            if let Some(window) = shell::focused_window(state) {
+                shell::move_to_workspace(state, &window, index);
+            }
+        }
     }
 }
 
