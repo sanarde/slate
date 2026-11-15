@@ -16,6 +16,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::xwayland::X11Surface;
 
 use super::focus::KeyFocus;
+use super::animation;
 use super::decoration;
 use super::grabs;
 use super::scale;
@@ -83,6 +84,7 @@ fn place_window(state: &mut Slate, window: Window) {
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+    animation::start_open(state, &window);
 }
 
 pub fn unmap_window(state: &mut Slate, window: &Window) {
@@ -92,6 +94,7 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
     tiling::forget(state, window);
+    animation::forget(state, window);
 
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
@@ -149,6 +152,7 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
         state.space.unmap_elem(&window);
     }
 
+    let previous = state.workspace;
     state.workspace = target;
     let arriving: Vec<(Window, Point<i32, Logical>)> = state
         .parked
@@ -157,6 +161,7 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
         .cloned()
         .collect();
     state.parked.retain(|(window, _)| workspace_of(window) != target);
+    let sliding: Vec<Window> = arriving.iter().map(|(window, _)| window.clone()).collect();
     for (window, location) in arriving {
         state.space.map_element(window, location, false);
     }
@@ -164,6 +169,9 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
     let top = state.space.elements().next_back().cloned();
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+    for window in &sliding {
+        animation::start_slide(state, window, target > previous);
+    }
 }
 
 pub fn clamp_workspaces(state: &mut Slate) {
@@ -225,6 +233,7 @@ pub fn minimize_window(state: &mut Slate, window: &Window) {
     };
 
     state.minimized.push((window.clone(), location));
+    animation::forget(state, window);
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
     if state.decoration_hover.as_ref().is_some_and(|(hovered, _)| hovered == window) {
@@ -254,6 +263,7 @@ pub fn restore_window(state: &mut Slate, window: &Window) {
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+    animation::start_open(state, &window);
 }
 
 pub fn restore_last_minimized(state: &mut Slate) {
@@ -439,6 +449,7 @@ fn resize_to_state(
     target: Rectangle<i32, Logical>,
 ) {
     let current = state.space.element_geometry(window);
+    let from = decoration::frame_rect(state, window);
     let geometry = if enabled {
         with_window_state(window, |window_state| window_state.restore = current);
         target
@@ -463,6 +474,11 @@ fn resize_to_state(
     }
 
     state.space.map_element(window.clone(), geometry.loc, true);
+
+    if let Some(from) = from {
+        let to = decoration::frame_of(geometry, decoration::insets(state, window));
+        animation::start_geometry(state, window, from, to);
+    }
 }
 
 fn send_current_state(window: &Window) {

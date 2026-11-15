@@ -6,6 +6,7 @@ use smithay::utils::Rectangle;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
+use super::animation;
 use super::decoration;
 use super::shell::{self, with_window_state, workspace_of};
 use super::state::Slate;
@@ -85,6 +86,7 @@ fn apply_tile(state: &mut Slate, window: &Window, frame: Area) {
             .into(),
     );
 
+    let from = decoration::frame_rect(state, window);
     if !is_tiled(window) {
         let current = state.space.element_geometry(window);
         with_window_state(window, |window_state| {
@@ -101,9 +103,15 @@ fn apply_tile(state: &mut Slate, window: &Window, frame: Area) {
         let _ = surface.configure(content);
     }
     state.space.map_element(window.clone(), content.loc, false);
+
+    if let Some(from) = from {
+        let to = Rectangle::new((frame.x, frame.y).into(), (frame.w, frame.h).into());
+        animation::start_geometry(state, window, from, to);
+    }
 }
 
 fn release(state: &mut Slate, window: &Window) {
+    let from = decoration::frame_rect(state, window);
     let rect = with_window_state(window, |window_state| {
         window_state.tiled = false;
         window_state.float_rect.take()
@@ -123,6 +131,11 @@ fn release(state: &mut Slate, window: &Window) {
         let _ = surface.configure(rect);
     }
     state.space.map_element(window.clone(), rect.loc, false);
+
+    if let Some(from) = from {
+        let to = decoration::frame_of(rect, decoration::insets(state, window));
+        animation::start_geometry(state, window, from, to);
+    }
 }
 
 fn workspace_windows(state: &Slate, workspace: usize) -> Vec<Window> {
