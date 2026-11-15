@@ -100,7 +100,7 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
         return;
     };
     match action {
-        Action::Terminal => state.spawn(&spawn::terminal_command("foot")),
+        Action::Terminal => state.spawn(&spawn::terminal_command(state.settings.terminal.as_deref(), "foot")),
         Action::Close => {
             if let Some(window) = shell::focused_window(state) {
                 shell::close_window(&window);

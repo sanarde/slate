@@ -17,7 +17,7 @@ use smithay::xwayland::X11Surface;
 
 use super::focus::KeyFocus;
 use super::grabs;
-use super::state::{Slate, WORKSPACE_COUNT};
+use super::state::Slate;
 
 #[derive(Default)]
 struct WindowState {
@@ -112,7 +112,7 @@ fn workspace_of(window: &Window) -> usize {
 }
 
 pub fn switch_workspace(state: &mut Slate, target: usize) {
-    if target >= WORKSPACE_COUNT || target == state.workspace {
+    if target >= state.settings.workspace_count || target == state.workspace {
         return;
     }
 
@@ -145,8 +145,39 @@ pub fn switch_workspace(state: &mut Slate, target: usize) {
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
 }
 
+pub fn clamp_workspaces(state: &mut Slate) {
+    let last = state.settings.workspace_count.saturating_sub(1);
+    if state.workspace > last {
+        switch_workspace(state, last);
+    }
+
+    let stranded: Vec<Window> = state
+        .parked
+        .iter()
+        .filter(|(window, _)| workspace_of(window) > last)
+        .map(|(window, _)| window.clone())
+        .collect();
+    for window in &stranded {
+        with_window_state(window, |window_state| window_state.workspace = last);
+    }
+    if last != state.workspace {
+        return;
+    }
+
+    let arriving: Vec<(Window, Point<i32, Logical>)> = state
+        .parked
+        .iter()
+        .filter(|(window, _)| stranded.contains(window))
+        .cloned()
+        .collect();
+    state.parked.retain(|(window, _)| !stranded.contains(window));
+    for (window, location) in arriving {
+        state.space.map_element(window, location, false);
+    }
+}
+
 pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
-    if target >= WORKSPACE_COUNT {
+    if target >= state.settings.workspace_count {
         return;
     }
     with_window_state(window, |window_state| window_state.workspace = target);
