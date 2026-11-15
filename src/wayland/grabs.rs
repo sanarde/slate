@@ -16,12 +16,12 @@ use super::state::Slate;
 
 const MIN_SIZE: i32 = 32;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub struct Edges {
-    left: bool,
-    right: bool,
-    top: bool,
-    bottom: bool,
+    pub left: bool,
+    pub right: bool,
+    pub top: bool,
+    pub bottom: bool,
 }
 
 impl From<xdg_toplevel::ResizeEdge> for Edges {
@@ -49,6 +49,19 @@ impl From<xwm::ResizeEdge> for Edges {
 }
 
 impl Edges {
+    pub fn new(left: bool, right: bool, top: bool, bottom: bool) -> Edges {
+        Edges {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
+
+    pub fn any(&self) -> bool {
+        self.left || self.right || self.top || self.bottom
+    }
+
     pub fn nearest(geometry: Rectangle<i32, Logical>, point: Point<f64, Logical>) -> Edges {
         let x = point.x - geometry.loc.x as f64;
         let y = point.y - geometry.loc.y as f64;
