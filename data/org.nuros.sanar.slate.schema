@@ -2,6 +2,17 @@
 id = org.nuros.sanar.slate
 path = /org/nuros/sanar/slate/
 
+[theme]
+type = s
+default = material-you
+summary = Look preset: material-you follows the Seurat color scheme, minimal, nord, gruvbox-dark, catppuccin-mocha, dracula, tokyo-night, light, a theme file of the user, or none
+
+[color-scheme]
+type = s
+default = auto
+choices = auto; light; dark
+summary = Variant of the built in Material You palette that is used when Seurat is not running, auto follows Seurat and is dark without it
+
 [mod-key]
 type = s
 default = auto
@@ -112,9 +123,9 @@ summary = Per application overrides as APP_ID=server, APP_ID=client or APP_ID=no
 [titlebar-height]
 type = i
 default = 30
-min = 16
+min = 0
 max = 96
-summary = Height of the titlebar in pixels, Wayland only
+summary = Height of the titlebar in pixels, 0 leaves only the border, Wayland only
 
 [titlebar-color-focused]
 type = s
