@@ -208,6 +208,8 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 | `master-grow`, `master-shrink`, `master-more`, `master-fewer`, `promote`, `swap-next`, `swap-prev` | Tiling adjustments. |
 | `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
 | `workspace N`, `move-to-workspace N` | N from 1. |
+| `workspace-next`, `workspace-prev` | Step through the workspaces, without wrapping around. |
+| `focus-monitor DIR`, `move-to-monitor DIR` | Move the pointer and the focus to another monitor or carry the focused window there. `DIR` is `next`, `prev` (in the order of the screen, from the left), `left`, `right`, `up` or `down`. A moved window keeps its offset inside the work area. |
 | `scratchpad NAME` | Show, hide or start the scratchpad NAME, see [Window rules and session](#window-rules-and-session). |
 | `reload` | Read the configuration again now. |
 | `restart` | X11 only: restart Slate and keep the windows. Wayland clients cannot survive a compositor restart. |
@@ -297,6 +299,19 @@ bind = Mod+grave=scratchpad term
 ### Session
 
 `exec-once = COMMAND` starts a program when Slate starts, repeat the line for more. `xdg-autostart = true` also starts the applications from the XDG autostart directories, `Hidden`, `OnlyShowIn`, `NotShowIn` and `TryExec` are honored and the desktop name is `Slate`. `session-environment` (on by default) imports `WAYLAND_DISPLAY`, `DISPLAY`, `SLATE_SOCKET`, `XCURSOR_*`, `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE` into the D-Bus activation and systemd user environments with `dbus-update-activation-environment --systemd`, so that services find the session. It is skipped in the nested winit backend. The `restart` action does not run `exec-once` and autostart again.
+
+## Monitors, gestures and touch
+
+Workspaces are shared by all monitors, like in a classic X11 session. Tiling lays out the windows of every monitor separately, a window belongs to the monitor it overlaps most. Bind `focus-monitor` and `move-to-monitor` to reach the other monitors from the keyboard:
+
+```
+bind = Mod+Alt+Right=focus-monitor right
+bind = Mod+Alt+Left=focus-monitor left
+bind = Mod+Alt+Shift+Right=move-to-monitor right
+bind = Mod+Alt+Shift+Left=move-to-monitor left
+```
+
+On Wayland with the udev backend a touchpad swipe with `gesture-fingers` fingers (3 by default) runs an action once it has travelled `gesture-threshold` units. `gesture-swipe-left`, `gesture-swipe-right`, `gesture-swipe-up` and `gesture-swipe-down` take any action of the key bindings, by default a swipe to the left goes to the next workspace and a swipe to the right to the previous one. Swipes with another finger count, pinch and hold go to the application through the pointer gestures protocol. Touchscreens work as a touch seat: a touch focuses the window under it and the events go to the application. The titlebar buttons do not react to touch yet. X11 has neither gestures nor touch handling of its own.
 
 ## Panels, scripts and IPC
 

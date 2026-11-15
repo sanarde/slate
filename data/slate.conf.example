@@ -140,12 +140,21 @@ theme = material-you
 #exec-once = waybar
 #xdg-autostart = true
 
+# Touchpad gestures, Wayland on a TTY only. A swipe with this many fingers runs the action of its direction.
+#gesture-fingers = 3
+#gesture-threshold = 100
+#gesture-swipe-left = workspace-next
+#gesture-swipe-right = workspace-prev
+#gesture-swipe-up = none
+#gesture-swipe-down = none
+
 # Key bindings ----------------------------------------------------------------------------------
 
 # These add to the built in bindings or replace the ones with the same combination.
 # Actions: terminal, close, maximize, minimize, restore, fullscreen, quit, focus-next, focus-prev, workspace N,
 # move-to-workspace N, toggle-tiling, layout-next, toggle-floating, master-grow, master-shrink,
 # master-more, master-fewer, promote, swap-next, swap-prev, scratchpad NAME, reload, restart (X11 only),
+# workspace-next, workspace-prev, focus-monitor DIR, move-to-monitor DIR (next, prev, left, right, up, down),
 # exec COMMAND, none (removes a binding).
 #bind = Mod+d=exec rofi -show drun
 #bind = Mod+b=exec firefox
