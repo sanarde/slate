@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 mod cursor;
+mod decoration;
+mod font;
 mod focus;
 mod grabs;
 mod handlers;
@@ -14,6 +16,7 @@ mod screencopy;
 mod settings;
 mod shell;
 mod state;
+mod titlebar;
 mod udev;
 mod winit;
 

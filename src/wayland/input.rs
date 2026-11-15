@@ -11,6 +11,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 use smithay::wayland::shell::wlr_layer::Layer;
 
+use super::decoration;
 use super::focus::KeyFocus;
 use super::grabs::{self, Edges};
 use super::shell;
@@ -156,6 +157,9 @@ fn pointer_motion<B: InputBackend>(state: &mut Slate, event: B::PointerMotionEve
     let pointer = state.seat.get_pointer().unwrap();
     let location = clamp_to_outputs(state, pointer.current_location() + event.delta());
     let serial = SERIAL_COUNTER.next_serial();
+    if !pointer.is_grabbed() {
+        decoration::update_hover(state, location);
+    }
     let under = surface_under(state, location);
 
     pointer.motion(
@@ -183,8 +187,11 @@ fn pointer_motion_absolute<B: InputBackend>(state: &mut Slate, event: B::Pointer
     let bounds = outputs_bounds(state);
     let location = event.position_transformed(bounds.size) + bounds.loc.to_f64();
     let serial = SERIAL_COUNTER.next_serial();
-    let under = surface_under(state, location);
     let pointer = state.seat.get_pointer().unwrap();
+    if !pointer.is_grabbed() {
+        decoration::update_hover(state, location);
+    }
+    let under = surface_under(state, location);
 
     pointer.motion(
         state,
@@ -205,11 +212,22 @@ fn pointer_button<B: InputBackend>(state: &mut Slate, event: B::PointerButtonEve
     let button = event.button_code();
     let button_state = event.state();
 
+    if button_state == ButtonState::Released {
+        decoration::release(state);
+    }
+
     if button_state == ButtonState::Pressed && !pointer.is_grabbed() && state.lock.is_none() {
         let location = pointer.current_location();
+        let decorated = if pointer.current_focus().is_none() {
+            decoration::hit(state, location)
+        } else {
+            None
+        };
         let window = state.space.element_under(location).map(|(window, _)| window.clone());
 
-        if let Some(window) = window {
+        if let Some((window, hit)) = decorated {
+            decoration::press(state, window, hit, button, serial, location);
+        } else if let Some(window) = window {
             shell::focus_window(state, Some(&window), serial);
 
             if mod_pressed(state.mod_key, &keyboard.modifier_state()) {
@@ -298,6 +316,10 @@ pub fn surface_under(state: &Slate, location: Point<f64, Logical>) -> Option<(Wl
 
     if let Some(found) = layer_surface(Layer::Overlay).or_else(|| layer_surface(Layer::Top)) {
         return Some(found);
+    }
+
+    if decoration::hit(state, location).is_some() {
+        return None;
     }
 
     if let Some((window, window_location)) = state.space.element_under(location)

@@ -16,6 +16,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::xwayland::X11Surface;
 
 use super::focus::KeyFocus;
+use super::decoration;
 use super::grabs;
 use super::scale;
 use super::state::Slate;
@@ -59,10 +60,13 @@ fn place_window(state: &mut Slate, window: Window) {
     let workspace = state.workspace;
     with_window_state(&window, |window_state| window_state.workspace = workspace);
     let size = window.geometry().size;
+    let insets = decoration::insets(state, &window);
+    let frame_width = size.w + insets.left + insets.right;
+    let frame_height = size.h + insets.top + insets.bottom;
     let zone = active_zone(state);
     let location = Point::from((
-        zone.loc.x + ((zone.size.w - size.w) / 2).max(0),
-        zone.loc.y + ((zone.size.h - size.h) / 2).max(0),
+        zone.loc.x + ((zone.size.w - frame_width) / 2).max(0) + insets.left,
+        zone.loc.y + ((zone.size.h - frame_height) / 2).max(0) + insets.top,
     ));
 
     if let Some(surface) = window.x11_surface() {
@@ -244,6 +248,43 @@ pub fn toggle_fullscreen(state: &mut Slate, window: &Window) {
     set_fullscreen(state, window, !fullscreen);
 }
 
+pub fn flags(window: &Window) -> (bool, bool) {
+    with_window_state(window, |window_state| (window_state.maximized, window_state.fullscreen))
+}
+
+fn inset_target(state: &Slate, window: &Window, target: Rectangle<i32, Logical>, maximized: bool) -> Rectangle<i32, Logical> {
+    let insets = decoration::insets_with(state, window, maximized, false);
+    Rectangle::new(
+        (target.loc.x + insets.left, target.loc.y + insets.top).into(),
+        (
+            (target.size.w - insets.left - insets.right).max(1),
+            (target.size.h - insets.top - insets.bottom).max(1),
+        )
+            .into(),
+    )
+}
+
+pub fn refit_maximized(state: &mut Slate) {
+    let windows: Vec<Window> = state
+        .space
+        .elements()
+        .filter(|window| flags(window).0)
+        .cloned()
+        .collect();
+    for window in windows {
+        let Some(output) = output_for_window(state, &window) else {
+            continue;
+        };
+        let mut target = layer_map_for_output(&output).non_exclusive_zone();
+        target.loc += state.space.output_geometry(&output).unwrap().loc;
+        let target = inset_target(state, &window, target, true);
+
+        let restore = with_window_state(&window, |window_state| window_state.restore);
+        resize_to_state(state, &window, ToplevelState::Maximized, true, target);
+        with_window_state(&window, |window_state| window_state.restore = restore);
+    }
+}
+
 pub fn set_maximized(state: &mut Slate, window: &Window, maximized: bool) {
     let target = output_for_window(state, window).map(|output| layer_map_for_output(&output).non_exclusive_zone());
     let Some(mut target) = target else {
@@ -268,6 +309,7 @@ pub fn set_maximized(state: &mut Slate, window: &Window, maximized: bool) {
     if let Some(surface) = window.x11_surface() {
         let _ = surface.set_maximized(maximized);
     }
+    let target = inset_target(state, window, target, maximized);
     resize_to_state(state, window, ToplevelState::Maximized, maximized, target);
 }
 

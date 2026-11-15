@@ -31,12 +31,15 @@ use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::X11Wm;
 
 use super::cursor::Cursors;
+use super::decoration::Hit;
+use super::font::Fonts;
 use super::settings::{resolve_mod_key, xkb_config};
 use super::grabs::Resizing;
 use super::output_management::OutputManagementState;
@@ -44,7 +47,7 @@ use super::outputs::OutputRecord;
 use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::cfgd::Cfgd;
-use crate::config::Settings;
+use crate::config::{ButtonKind, Settings};
 use crate::spawn;
 
 #[derive(Clone, Copy)]
@@ -69,6 +72,13 @@ pub struct Slate {
     pub fractional_scale_state: FractionalScaleManagerState,
     pub session_lock_state: SessionLockManagerState,
     pub lock: Option<Vec<(Output, LockSurface)>>,
+    pub xdg_decoration_state: XdgDecorationState,
+    pub fonts: Fonts,
+    pub decoration_generation: u64,
+    pub decoration_hover: Option<(Window, Hit)>,
+    pub decoration_press: Option<(Window, ButtonKind)>,
+    pub decoration_cursor: bool,
+    pub last_title_click: Option<(Window, Instant)>,
     pub resizing: Option<Resizing>,
     pub popups: PopupManager,
     pub compositor_state: CompositorState,
@@ -156,6 +166,13 @@ impl Slate {
             fractional_scale_state: FractionalScaleManagerState::new::<Slate>(&display_handle),
             session_lock_state: SessionLockManagerState::new::<Slate, _>(&display_handle, |_| true),
             lock: None,
+            xdg_decoration_state: XdgDecorationState::new::<Slate>(&display_handle),
+            fonts: Fonts::load(&settings.decoration.title_font),
+            decoration_generation: 0,
+            decoration_hover: None,
+            decoration_press: None,
+            decoration_cursor: false,
+            last_title_click: None,
             resizing: None,
             popups: PopupManager::default(),
             compositor_state: CompositorState::new::<Slate>(&display_handle),

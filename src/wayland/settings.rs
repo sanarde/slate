@@ -7,6 +7,8 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 
 use super::cursor::Cursors;
+use super::font::Fonts;
+use super::handlers::decoration::reapply;
 use super::shell;
 use super::state::{ModKey, Slate};
 use crate::config::{ModKeySetting, PREFIX, Settings, Xkb};
@@ -88,6 +90,22 @@ impl Slate {
 
         if old.workspace_count != new.workspace_count {
             shell::clamp_workspaces(self);
+        }
+
+        if old.decoration != new.decoration
+            || old.border_width != new.border_width
+            || old.border_focused != new.border_focused
+            || old.border_unfocused != new.border_unfocused
+        {
+            if old.decoration.title_font != new.decoration.title_font {
+                self.fonts = Fonts::load(&new.decoration.title_font);
+            }
+            self.decoration_generation += 1;
+            let toplevels: Vec<_> = self.xdg_shell_state.toplevel_surfaces().to_vec();
+            for toplevel in &toplevels {
+                reapply(self, toplevel);
+            }
+            shell::refit_maximized(self);
         }
     }
 }
