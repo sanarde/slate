@@ -14,11 +14,13 @@ Floating window manager of SanarDE that runs as a Wayland compositor built on Sm
 
 - Rust 1.88 or newer (edition 2024) and Cargo
 - libseat, libinput, libudev, libgbm, libxkbcommon
+- libcfgd, the client library of [cfgd](https://git.nuros.org/sanarde/cfgd), found through `pkg-config`
 - EGL and OpenGL ES (Mesa)
 
 Optional at run time:
 
 - Xwayland, to run X11 applications in the Wayland session
+- The cfgd daemon `cfgdd`, for settings. Without it the defaults apply.
 
 ## Build
 
@@ -26,7 +28,7 @@ Optional at run time:
 cargo build --release
 ```
 
-The binary is `target/release/slate`. The files in `data` are session entries for display managers: `slate-wayland.desktop` goes to `share/wayland-sessions`, `slate-x11.desktop` to `share/xsessions`.
+The binary is `target/release/slate`. When libcfgd is not installed, point `PKG_CONFIG_PATH` at the directory with its `.pc` file. The files in `data` are installed by hand: `slate-wayland.desktop` to `share/wayland-sessions`, `slate-x11.desktop` to `share/xsessions` and `org.nuros.sanar.slate.schema` to `share/cfgd/schemas`.
 
 ## Usage
 
@@ -58,10 +60,31 @@ Key bindings. Mod is Super, except in `winit` where it is Alt.
 
 Focus follows clicks. The Wayland backend implements xdg-shell, wlr-layer-shell, xdg-output, the data device and XWayland. The X11 backend supports the EWMH hints needed by panels and wallpaper programs: window types `DOCK` and `DESKTOP`, struts, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE`, `_NET_CURRENT_DESKTOP` and RandR monitors. There are nine workspaces shared by all outputs.
 
+## Settings
+
+Settings are keys of the cfgd schema `org.nuros.sanar.slate`, path `/org/nuros/sanar/slate/`. Changes apply without a restart.
+
+| Key | Default | Applies to |
+| --- | --- | --- |
+| `mod-key` | `auto` | Both. `auto` is Super, or Alt in `winit`. Values: `auto`, `super`, `alt`. |
+| `terminal` | empty | Both. Command of Mod+Return, empty uses `$TERMINAL` and then `foot` or `xterm`. |
+| `workspace-count` | 9 | Both. From 1 to 9. |
+| `border-width` | 2 | X11. |
+| `border-color-focused`, `border-color-unfocused` | `#6750a4`, `#49454f` | X11. Form `#rrggbb`. |
+| `xkb-rules`, `xkb-model`, `xkb-layout`, `xkb-variant`, `xkb-options` | empty | Wayland. Empty uses the `XKB_DEFAULT_*` variables. |
+| `repeat-delay`, `repeat-rate` | 200, 25 | Wayland. |
+| `cursor-theme`, `cursor-size` | empty, 0 | Wayland. Empty and 0 use `XCURSOR_THEME`, `XCURSOR_SIZE` and then `default`, 24. |
+| `tap-to-click`, `natural-scroll` | true, false | Wayland on a TTY. |
+
+```
+cfgd set /org/nuros/sanar/slate/xkb-layout 'us,ru'
+cfgd set /org/nuros/sanar/slate/xkb-options 'grp:alt_shift_toggle'
+```
+
 ## Roadmap
 
 - Tiling layout as a setting, floating stays the default.
-- Settings through cfgd.
+- Configurable key bindings.
 - Server-side decorations (xdg-decoration).
 - Screen capture, idle and session lock protocols.
 
