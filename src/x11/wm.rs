@@ -22,11 +22,13 @@ use super::atoms::Atoms;
 use super::geometry::{Rect, Strut};
 use super::keys;
 mod frame;
+mod ipc;
 mod tiling;
 
 use frame::Insets;
 use crate::bindings::{Action, Binding};
 use crate::font::Fonts;
+use crate::ipc::Ipc;
 use crate::layout::WorkspaceLayout;
 use crate::config::{ButtonKind, ModKeySetting, Settings};
 use crate::source::ConfigSource;
@@ -125,6 +127,8 @@ pub struct Wm {
     pressed: Option<(Window, ButtonKind)>,
     last_title_click: Option<(Window, Instant)>,
     paint_generation: u64,
+    ipc: Option<Ipc>,
+    last_focus: Option<u64>,
     running: bool,
 }
 
@@ -178,6 +182,8 @@ impl Wm {
             pressed: None,
             last_title_click: None,
             paint_generation: 0,
+            ipc: Ipc::start(),
+            last_focus: None,
             running: true,
         };
 
@@ -195,6 +201,7 @@ impl Wm {
 
     pub fn run(&mut self) -> Result<()> {
         let notify = self.config.notify_fd();
+        let wake = self.ipc.as_ref().and_then(Ipc::wake_fd);
         let timeout = Timespec {
             tv_sec: POLL_SECONDS,
             tv_nsec: 0,
@@ -215,10 +222,14 @@ impl Wm {
             if let Some(notify) = &notify {
                 fds.push(PollFd::new(notify, PollFlags::IN));
             }
+            if let Some(wake) = &wake {
+                fds.push(PollFd::new(wake, PollFlags::IN));
+            }
             match poll(&mut fds, Some(&timeout)) {
                 Ok(_) | Err(Errno::INTR) => {}
                 Err(error) => return Err(error.into()),
             }
+            self.serve_ipc();
             self.reload_settings()?;
         }
         Ok(())
@@ -788,6 +799,7 @@ impl Wm {
             self.set_state(window, Some(maximized), Some(fullscreen))?;
         }
         self.arrange()?;
+        self.window_event("window-open", window);
         self.restack()
     }
 
@@ -839,6 +851,7 @@ impl Wm {
             &[target as u32],
         )?;
         self.arrange()?;
+        self.emit("workspace", &[("index", (target + 1).to_string())]);
 
         self.focused = None;
         let top = self.focus_candidate(target);
@@ -895,6 +908,7 @@ impl Wm {
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
+        self.emit("window-close", &[("id", window.to_string())]);
         let removed = self.clients.remove(index);
         if let Some(frame) = removed.frame {
             self.conn
@@ -980,6 +994,10 @@ impl Wm {
             self.send_protocol(window, self.atoms.WM_TAKE_FOCUS)?;
         }
         self.focused = Some(window);
+        if self.last_focus != Some(window as u64) {
+            self.last_focus = Some(window as u64);
+            self.emit("focus", &[("id", window.to_string())]);
+        }
         self.set_active_window(window)?;
         self.update_borders()?;
         self.restack()
@@ -1332,14 +1350,24 @@ impl Wm {
             .iter()
             .find(|(keycode, binding)| *keycode == event.detail && self.mask_of(binding) == held)
             .map(|(_, binding)| binding.action.clone());
-        let Some(action) = action else {
-            return Ok(());
-        };
+        match action {
+            Some(action) => self.run_action(action),
+            None => Ok(()),
+        }
+    }
+
+    fn run_action(&mut self, action: Action) -> Result<()> {
         let focused = self.focused;
 
         match action {
-            Action::Terminal => spawn::spawn(&spawn::terminal_command(self.settings.terminal.as_deref(), "xterm"), &[]),
-            Action::Exec(command) => spawn::spawn(&command, &[]),
+            Action::Terminal => {
+                let environment = self.spawn_env();
+                spawn::spawn(&spawn::terminal_command(self.settings.terminal.as_deref(), "xterm"), &environment);
+            }
+            Action::Exec(command) => {
+                let environment = self.spawn_env();
+                spawn::spawn(&command, &environment);
+            }
             Action::Close => {
                 if let Some(window) = focused {
                     self.close(window)?;
