@@ -13,6 +13,7 @@ Floating window manager that runs as a Wayland compositor built on Smithay and a
 ## Dependencies
 
 - Rust 1.88 or newer (edition 2024) and Cargo
+- A C11 compiler (gcc or clang), because parts of the X11 backend are written in C
 - libseat, libinput, libudev, libgbm, libxkbcommon
 - EGL and OpenGL ES (Mesa)
 - fontconfig (`fc-match`), to find the titlebar font
