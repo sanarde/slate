@@ -24,6 +24,7 @@ pub fn start(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Resul
     let Some(wake) = ipc.wake_fd() else {
         return Ok(());
     };
+    state.ipc_events = Some(ipc.events());
     state.ipc = Some(ipc);
 
     event_loop
@@ -39,8 +40,8 @@ pub fn start(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Resul
 }
 
 pub fn emit(state: &Slate, name: &str, fields: &[(&str, String)]) {
-    if let Some(ipc) = &state.ipc {
-        ipc.broadcast(ipc::event(name, fields));
+    if let Some(events) = &state.ipc_events {
+        events.broadcast(ipc::event(name, fields));
     }
 }
 

@@ -12,8 +12,8 @@ use crate::layout::Layout;
 
 impl Wm {
     pub(super) fn emit(&self, name: &str, fields: &[(&str, String)]) {
-        if let Some(ipc) = &self.ipc {
-            ipc.broadcast(ipc::event(name, fields));
+        if let Some(events) = &self.events {
+            events.broadcast(ipc::event(name, fields));
         }
     }
 

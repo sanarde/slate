@@ -152,6 +152,7 @@ pub struct Wm {
     last_title_click: Option<(Window, Instant)>,
     paint_generation: u64,
     ipc: Option<Ipc>,
+    events: Option<crate::ipc::Events>,
     last_focus: Option<u64>,
     adopting: bool,
     timing: crate::stats::Timing,
@@ -218,6 +219,7 @@ impl Wm {
             pressed: None,
             last_title_click: None,
             paint_generation: 0,
+            events: None,
             ipc: Ipc::start(),
             last_focus: None,
             adopting: false,
@@ -225,6 +227,7 @@ impl Wm {
             running: true,
         };
 
+        wm.events = wm.ipc.as_ref().map(Ipc::events);
         wm.monitor_workspaces[0] = wm.inherited_workspace();
         wm.set_cursor()?;
         wm.create_cursors()?;

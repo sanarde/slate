@@ -54,7 +54,7 @@ use super::screencopy::ScreencopyState;
 use super::udev::Udev;
 use crate::config::{ButtonKind, Settings};
 use crate::font::Fonts;
-use crate::ipc::Ipc;
+use crate::ipc::{Events, Ipc};
 use crate::layout::WorkspaceLayout;
 use crate::source::ConfigSource;
 use crate::spawn;
@@ -85,6 +85,7 @@ pub struct Slate {
     pub closing: super::closing::Closing,
     pub switcher: Option<super::switcher::Switcher>,
     pub ipc: Option<Ipc>,
+    pub ipc_events: Option<Events>,
     pub foreign_toplevel: ForeignToplevelState,
     pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
     pub blur_program: RefCell<Option<Option<GlesTexProgram>>>,
@@ -197,6 +198,7 @@ impl Slate {
             closing: Default::default(),
             switcher: None,
             ipc: None,
+            ipc_events: None,
             foreign_toplevel: ForeignToplevelState::new(&display_handle),
             shadows: RefCell::new(HashMap::new()),
             blur_program: RefCell::new(None),

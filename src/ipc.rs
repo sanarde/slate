@@ -22,10 +22,26 @@ pub struct Request {
     reply: Sender<String>,
 }
 
+type Subscribers = Arc<Mutex<Vec<SyncSender<String>>>>;
+
+#[derive(Clone, Default)]
+pub struct Events {
+    subscribers: Subscribers,
+}
+
+impl Events {
+    pub fn broadcast(&self, event: String) {
+        self.subscribers
+            .lock()
+            .unwrap()
+            .retain(|subscriber| subscriber.try_send(event.clone()).is_ok());
+    }
+}
+
 pub struct Ipc {
     requests: Receiver<Request>,
     wake: OwnedFd,
-    subscribers: Arc<Mutex<Vec<SyncSender<String>>>>,
+    events: Events,
     path: PathBuf,
 }
 
@@ -132,7 +148,7 @@ fn wake(fd: &OwnedFd) {
 fn serve_client(
     stream: UnixStream,
     requests: Sender<Request>,
-    subscribers: Arc<Mutex<Vec<SyncSender<String>>>>,
+    subscribers: Subscribers,
     wake_fd: Arc<OwnedFd>,
 ) {
     let Ok(reader) = stream.try_clone() else {
@@ -189,8 +205,8 @@ impl Ipc {
         let thread_wake = Arc::new(rustix::io::fcntl_dupfd_cloexec(&wake_fd, 0).ok()?);
 
         let (sender, receiver) = mpsc::channel();
-        let subscribers: Arc<Mutex<Vec<SyncSender<String>>>> = Arc::new(Mutex::new(Vec::new()));
-        let accept_subscribers = subscribers.clone();
+        let events = Events::default();
+        let accept_subscribers = events.subscribers.clone();
 
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
@@ -205,7 +221,7 @@ impl Ipc {
         Some(Ipc {
             requests: receiver,
             wake: wake_fd,
-            subscribers,
+            events,
             path,
         })
     }
@@ -218,11 +234,8 @@ impl Ipc {
         rustix::io::fcntl_dupfd_cloexec(self.wake.as_fd(), 0).ok()
     }
 
-    pub fn broadcast(&self, event: String) {
-        self.subscribers
-            .lock()
-            .unwrap()
-            .retain(|subscriber| subscriber.try_send(event.clone()).is_ok());
+    pub fn events(&self) -> Events {
+        self.events.clone()
     }
 
     fn drain_wake(&self) {
@@ -406,6 +419,34 @@ pub fn event(name: &str, fields: &[(&str, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn events_reach_subscribers_through_a_clone_and_slow_ones_are_dropped() {
+        let events = Events::default();
+        let (sender, receiver) = mpsc::sync_channel(2);
+        events.subscribers.lock().unwrap().push(sender);
+
+        let handle = events.clone();
+        handle.broadcast("one".to_string());
+        handle.broadcast("two".to_string());
+        assert_eq!(receiver.try_recv().unwrap(), "one");
+        assert_eq!(receiver.try_recv().unwrap(), "two");
+
+        for _ in 0..3 {
+            handle.broadcast("fill".to_string());
+        }
+        assert!(events.subscribers.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_closed_subscriber_is_forgotten() {
+        let events = Events::default();
+        let (sender, receiver) = mpsc::sync_channel(4);
+        events.subscribers.lock().unwrap().push(sender);
+        drop(receiver);
+        events.broadcast("gone".to_string());
+        assert!(events.subscribers.lock().unwrap().is_empty());
+    }
 
     struct Fake {
         executed: Vec<String>,
