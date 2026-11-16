@@ -56,7 +56,30 @@ pub fn ease(curve: Curve, t: f64) -> f64 {
             const OVERSHOOT: f64 = 1.70158;
             1.0 + (OVERSHOOT + 1.0) * (t - 1.0).powi(3) + OVERSHOOT * (t - 1.0).powi(2)
         }
+        Curve::Standard => bezier(0.2, 0.0, 0.0, 1.0, t),
+        Curve::StandardDecelerate => bezier(0.0, 0.0, 0.0, 1.0, t),
+        Curve::StandardAccelerate => bezier(0.3, 0.0, 1.0, 1.0, t),
+        Curve::Emphasized => bezier(0.2, 0.0, 0.0, 1.0, t),
+        Curve::EmphasizedDecelerate => bezier(0.05, 0.7, 0.1, 1.0, t),
+        Curve::EmphasizedAccelerate => bezier(0.3, 0.0, 0.8, 0.15, t),
     }
+}
+
+fn bezier(x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
+    let coordinate = |a: f64, b: f64, s: f64| {
+        let inverse = 1.0 - s;
+        3.0 * inverse * inverse * s * a + 3.0 * inverse * s * s * b + s * s * s
+    };
+    let (mut low, mut high) = (0.0, 1.0);
+    for _ in 0..40 {
+        let middle = (low + high) / 2.0;
+        if coordinate(x1, x2, middle) < x {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    coordinate(y1, y2, (low + high) / 2.0)
 }
 
 fn duration(state: &Slate) -> Duration {
@@ -156,12 +179,26 @@ mod tests {
 
     #[test]
     fn every_curve_starts_at_zero_and_ends_at_one() {
-        for curve in [Curve::Linear, Curve::EaseOut, Curve::EaseInOut, Curve::Overshoot] {
+        for curve in [
+            Curve::Linear,
+            Curve::EaseOut,
+            Curve::EaseInOut,
+            Curve::Overshoot,
+            Curve::Standard,
+            Curve::StandardDecelerate,
+            Curve::StandardAccelerate,
+            Curve::Emphasized,
+            Curve::EmphasizedDecelerate,
+            Curve::EmphasizedAccelerate,
+        ] {
             assert!(ease(curve, 0.0).abs() < 1e-9, "{}", ease(curve, 0.0));
             assert!((ease(curve, 1.0) - 1.0).abs() < 1e-9);
         }
         assert!(ease(Curve::EaseOut, 0.5) > 0.5);
         assert!(ease(Curve::EaseInOut, 0.5) - 0.5 < 1e-9);
         assert!(ease(Curve::Overshoot, 0.8) > 1.0);
+        assert!(ease(Curve::EmphasizedDecelerate, 0.3) > 0.6);
+        assert!(ease(Curve::EmphasizedAccelerate, 0.5) < 0.2);
+        assert!(ease(Curve::Standard, 0.5) > 0.8);
     }
 }

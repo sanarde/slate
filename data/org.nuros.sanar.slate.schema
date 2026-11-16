@@ -356,8 +356,8 @@ summary = Duration of an animation in milliseconds, 0 turns animations off, Wayl
 [animation-curve]
 type = s
 default = ease-out
-choices = linear; ease-out; ease-in-out; overshoot
-summary = Easing of animations, Wayland only
+choices = linear; ease-out; ease-in-out; overshoot; standard; standard-decelerate; standard-accelerate; emphasized; emphasized-decelerate; emphasized-accelerate
+summary = Easing of animations, the last six are the Material Design 3 curves, Wayland only
 
 [animate-open]
 type = b
@@ -470,3 +470,35 @@ default = 2
 min = 1
 max = 4
 summary = Number of blur passes, more is smoother and slower, Wayland only
+
+[elevation-focused]
+type = i
+default = -1
+min = -1
+max = 5
+summary = Material Design 3 elevation level 0 to 5 of the shadow of the focused window, -1 uses shadow-size, shadow-offset-x, shadow-offset-y and shadow-color-focused. Wayland only
+
+[elevation-unfocused]
+type = i
+default = -1
+min = -1
+max = 5
+summary = Material Design 3 elevation level 0 to 5 of the shadow of windows that are not focused, -1 uses the shadow-* keys and shadow-color-unfocused. Wayland only
+
+[animation-close-curve]
+type = s
+default = ease-out
+choices = linear; ease-out; ease-in-out; overshoot; standard; standard-decelerate; standard-accelerate; emphasized; emphasized-decelerate; emphasized-accelerate
+summary = Easing of the close animation, Wayland only
+
+[animation-close-duration]
+type = i
+default = 200
+min = 0
+max = 2000
+summary = Milliseconds of the close animation, 0 turns it off, Wayland only
+
+[button-pressed-color]
+type = s
+default = #ffffff4d
+summary = Fill of a titlebar button while the mouse button is held on it, the close button keeps its hover color

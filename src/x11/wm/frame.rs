@@ -44,6 +44,7 @@ pub(super) struct Painted {
     maximized: bool,
     title: String,
     hover: Option<ButtonKind>,
+    pressed: bool,
     generation: u64,
 }
 
@@ -374,6 +375,7 @@ impl Wm {
             maximized,
             title: self.clients[index].title.clone(),
             hover,
+            pressed: hover.is_some() && matches!(self.pressed, Some((pressed, kind)) if pressed == window && Some(kind) == hover),
             generation: self.paint_generation,
         };
         if self.clients[index].painted.as_ref() == Some(&key) {
@@ -422,6 +424,7 @@ impl Wm {
                 maximized,
                 title: &key.title,
                 hover,
+                pressed: key.pressed,
             });
             self.update_shape(index, frame, [width, height, top, radius as i32], &pixels)?;
             self.put_titlebar(frame, width, top, &pixels, border)?;
@@ -650,6 +653,7 @@ impl Wm {
         match hit {
             Some(FrameHit::Button(kind)) if event.detail == BUTTON_LEFT => {
                 self.pressed = Some((window, kind));
+                self.repaint(window)?;
             }
             Some(FrameHit::Titlebar) => match event.detail {
                 BUTTON_LEFT => {
@@ -718,6 +722,7 @@ impl Wm {
         let Some((window, kind)) = self.pressed.take() else {
             return Ok(());
         };
+        self.repaint(window)?;
         if self.hover != Some((window, FrameHit::Button(kind))) {
             return Ok(());
         }

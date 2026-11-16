@@ -20,6 +20,7 @@ pub struct Params<'a> {
     pub maximized: bool,
     pub title: &'a str,
     pub hover: Option<ButtonKind>,
+    pub pressed: bool,
 }
 
 pub fn layout(decoration: &Decoration, width: i32, height: i32) -> Vec<(ButtonKind, Rectangle<i32, Logical>)> {
@@ -231,6 +232,7 @@ pub fn render(params: &Params) -> Vec<u8> {
         let fill = if params.hover == Some(*kind) {
             match kind {
                 ButtonKind::Close => decoration.button_close_hover_color,
+                ButtonKind::Maximize | ButtonKind::Minimize if params.pressed => decoration.button_pressed_color,
                 ButtonKind::Maximize | ButtonKind::Minimize => decoration.button_hover_color,
             }
         } else {
@@ -334,6 +336,7 @@ mod tests {
             maximized: false,
             title: "",
             hover: None,
+            pressed: false,
         }
     }
 

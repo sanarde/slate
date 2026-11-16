@@ -54,7 +54,7 @@ impl Closing {
 
 fn enabled(state: &Slate) -> bool {
     let effects = &state.settings.effects;
-    effects.animations && effects.animate_close && effects.duration_ms > 0
+    effects.animations && effects.animate_close && effects.close_duration_ms > 0
 }
 
 pub fn request(state: &mut Slate, window: &Window) {
@@ -82,7 +82,7 @@ pub fn promote(state: &mut Slate, window: &Window) {
 }
 
 fn duration(state: &Slate) -> Duration {
-    Duration::from_millis(state.settings.effects.duration_ms)
+    Duration::from_millis(state.settings.effects.close_duration_ms)
 }
 
 pub fn prune(state: &mut Slate) {
@@ -100,8 +100,12 @@ fn take(state: &mut Slate, renderer: &mut GlesRenderer, output: &Output, window:
     let scale = output.current_scale().fractional_scale();
     let content = state.space.element_geometry(window);
     let frame = decoration::frame_rect(state, window).or(content)?;
-    let margin = state.settings.effects.shadow_size.max(0)
-        + state.settings.effects.shadow_offset.0.abs().max(state.settings.effects.shadow_offset.1.abs());
+    let shadows = [&state.settings.effects.shadow_focused, &state.settings.effects.shadow_unfocused];
+    let margin = shadows
+        .iter()
+        .map(|shadow| shadow.size.max(0) + shadow.offset.0.abs().max(shadow.offset.1.abs()))
+        .max()
+        .unwrap_or(0);
     let rect = Rectangle::new(
         (frame.loc.x - margin, frame.loc.y - margin).into(),
         (frame.size.w + 2 * margin, frame.size.h + 2 * margin).into(),
@@ -162,7 +166,7 @@ pub fn elements(state: &Slate, output: &Output, elements: &mut Vec<OutputElement
 
     for ghost in state.closing.ghosts.iter().filter(|ghost| ghost.output == name) {
         let linear = (ghost.start.elapsed().as_secs_f64() / length).clamp(0.0, 1.0);
-        let progress = animation::ease(state.settings.effects.curve, linear);
+        let progress = animation::ease(state.settings.effects.close_curve, linear);
         let factor = 1.0 - (1.0 - f64::from(state.settings.effects.open_scale)) * progress;
 
         let location: Point<f64, Physical> = (ghost.rect.loc - output_geometry.loc).to_f64().to_physical(scale);

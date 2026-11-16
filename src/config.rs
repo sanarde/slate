@@ -30,9 +30,13 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("shadow-color-focused", "#00000073"),
     ("shadow-color-unfocused", "#00000040"),
     ("shadow-tiled", "false"),
+    ("elevation-focused", "-1"),
+    ("elevation-unfocused", "-1"),
     ("animations", "true"),
     ("animation-duration", "200"),
     ("animation-curve", "ease-out"),
+    ("animation-close-curve", "ease-out"),
+    ("animation-close-duration", "200"),
     ("animate-open", "true"),
     ("animate-move", "true"),
     ("animate-workspace", "true"),
@@ -86,6 +90,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("button-shape", "circle"),
     ("button-color", "#00000000"),
     ("button-hover-color", "#ffffff33"),
+    ("button-pressed-color", "#ffffff4d"),
     ("button-close-hover-color", "#e5484d"),
     ("button-icon-color-focused", "#ffffff"),
     ("button-icon-color-unfocused", "#cac4d0"),
@@ -217,18 +222,31 @@ pub enum Curve {
     EaseOut,
     EaseInOut,
     Overshoot,
+    Standard,
+    StandardDecelerate,
+    StandardAccelerate,
+    Emphasized,
+    EmphasizedDecelerate,
+    EmphasizedAccelerate,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Shadow {
+    pub size: i32,
+    pub offset: (i32, i32),
+    pub color: Color,
 }
 
 #[derive(Clone, PartialEq)]
 pub struct Effects {
-    pub shadow_size: i32,
-    pub shadow_offset: (i32, i32),
-    pub shadow_color_focused: Color,
-    pub shadow_color_unfocused: Color,
+    pub shadow_focused: Shadow,
+    pub shadow_unfocused: Shadow,
     pub shadow_tiled: bool,
     pub animations: bool,
     pub duration_ms: u64,
     pub curve: Curve,
+    pub close_curve: Curve,
+    pub close_duration_ms: u64,
     pub animate_open: bool,
     pub animate_move: bool,
     pub animate_workspace: bool,
@@ -272,6 +290,7 @@ pub struct Decoration {
     pub button_shape: ButtonShape,
     pub button_color: Color,
     pub button_hover_color: Color,
+    pub button_pressed_color: Color,
     pub button_close_hover_color: Color,
     pub button_icon_color_focused: Color,
     pub button_icon_color_unfocused: Color,
@@ -337,6 +356,33 @@ fn boolean(values: &Values, key: &str) -> bool {
         "false" => Some(false),
         _ => None,
     })
+}
+
+pub fn elevation(level: i64) -> Shadow {
+    const SIZE: [i32; 6] = [0, 6, 10, 14, 18, 22];
+    const OFFSET: [i32; 6] = [0, 1, 3, 5, 7, 9];
+    const ALPHA: [u8; 6] = [0, 46, 56, 66, 77, 87];
+    let index = level.clamp(0, 5) as usize;
+    Shadow {
+        size: SIZE[index],
+        offset: (0, OFFSET[index]),
+        color: Color::rgba(u32::from(ALPHA[index])),
+    }
+}
+
+fn shadow(values: &Values, elevation_key: &str, color_key: &str) -> Shadow {
+    let level = int(values, elevation_key, -1, 5);
+    if level >= 0 {
+        return elevation(level);
+    }
+    Shadow {
+        size: int(values, "shadow-size", 0, 128) as i32,
+        offset: (
+            int(values, "shadow-offset-x", -64, 64) as i32,
+            int(values, "shadow-offset-y", -64, 64) as i32,
+        ),
+        color: color(values, color_key),
+    }
 }
 
 fn gesture_action(values: &Values, key: &str) -> Option<Action> {
@@ -463,6 +509,7 @@ fn decoration_from(values: &Values) -> Decoration {
         ),
         button_color: color(values, "button-color"),
         button_hover_color: color(values, "button-hover-color"),
+        button_pressed_color: color(values, "button-pressed-color"),
         button_close_hover_color: color(values, "button-close-hover-color"),
         button_icon_color_focused: color(values, "button-icon-color-focused"),
         button_icon_color_unfocused: color(values, "button-icon-color-unfocused"),
@@ -542,13 +589,8 @@ impl Settings {
                 floating_rules: values.lists.get("floating-rules").cloned().unwrap_or_default(),
             },
             effects: Effects {
-                shadow_size: int(values, "shadow-size", 0, 128) as i32,
-                shadow_offset: (
-                    int(values, "shadow-offset-x", -64, 64) as i32,
-                    int(values, "shadow-offset-y", -64, 64) as i32,
-                ),
-                shadow_color_focused: color(values, "shadow-color-focused"),
-                shadow_color_unfocused: color(values, "shadow-color-unfocused"),
+                shadow_focused: shadow(values, "elevation-focused", "shadow-color-focused"),
+                shadow_unfocused: shadow(values, "elevation-unfocused", "shadow-color-unfocused"),
                 shadow_tiled: boolean(values, "shadow-tiled"),
                 animations: boolean(values, "animations"),
                 duration_ms: int(values, "animation-duration", 0, 2000) as u64,
@@ -560,8 +602,31 @@ impl Settings {
                         ("ease-out", Curve::EaseOut),
                         ("ease-in-out", Curve::EaseInOut),
                         ("overshoot", Curve::Overshoot),
+                        ("standard", Curve::Standard),
+                        ("standard-decelerate", Curve::StandardDecelerate),
+                        ("standard-accelerate", Curve::StandardAccelerate),
+                        ("emphasized", Curve::Emphasized),
+                        ("emphasized-decelerate", Curve::EmphasizedDecelerate),
+                        ("emphasized-accelerate", Curve::EmphasizedAccelerate),
                     ],
                 ),
+                close_curve: choice(
+                    values,
+                    "animation-close-curve",
+                    &[
+                        ("linear", Curve::Linear),
+                        ("ease-out", Curve::EaseOut),
+                        ("ease-in-out", Curve::EaseInOut),
+                        ("overshoot", Curve::Overshoot),
+                        ("standard", Curve::Standard),
+                        ("standard-decelerate", Curve::StandardDecelerate),
+                        ("standard-accelerate", Curve::StandardAccelerate),
+                        ("emphasized", Curve::Emphasized),
+                        ("emphasized-decelerate", Curve::EmphasizedDecelerate),
+                        ("emphasized-accelerate", Curve::EmphasizedAccelerate),
+                    ],
+                ),
+                close_duration_ms: int(values, "animation-close-duration", 0, 2000) as u64,
                 animate_open: boolean(values, "animate-open"),
                 animate_move: boolean(values, "animate-move"),
                 animate_workspace: boolean(values, "animate-workspace"),

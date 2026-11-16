@@ -166,16 +166,12 @@ pub fn elements(
     alpha: f32,
 ) -> Vec<OutputElement> {
     let effects = &state.settings.effects;
-    let size = effects.shadow_size;
+    let style = if focused { &effects.shadow_focused } else { &effects.shadow_unfocused };
+    let size = style.size;
     if size <= 0 {
         return Vec::new();
     }
-
-    let color = if focused {
-        effects.shadow_color_focused
-    } else {
-        effects.shadow_color_unfocused
-    };
+    let color = style.color;
     let key = Key {
         size,
         radius,
@@ -190,7 +186,7 @@ pub fn elements(
     }
     let set = cache.entry(key).or_insert_with(|| build(key, color));
 
-    let (offset_x, offset_y) = effects.shadow_offset;
+    let (offset_x, offset_y) = style.offset;
     let (x, y) = (frame.loc.x + offset_x, frame.loc.y + offset_y);
     let (w, h) = (frame.size.w, frame.size.h);
     let rect = |x: i32, y: i32, w: i32, h: i32| Rectangle::new((x, y).into(), (w, h).into());

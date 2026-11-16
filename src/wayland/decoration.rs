@@ -52,6 +52,7 @@ struct Key {
     maximized: bool,
     title: String,
     hover: Option<ButtonKind>,
+    pressed: bool,
     generation: u64,
 }
 
@@ -442,6 +443,7 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
         maximized: key.maximized,
         title: &key.title,
         hover,
+        pressed: key.pressed,
         });
         MemoryRenderBuffer::from_slice(
             &pixels,
@@ -560,6 +562,8 @@ pub fn elements(
         maximized,
         title: title(window),
         hover,
+        pressed: hover.is_some()
+            && matches!(&state.decoration_press, Some((pressed, kind)) if pressed == window && Some(*kind) == hover),
         generation: state.decoration_generation,
     };
 
