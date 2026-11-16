@@ -152,6 +152,11 @@ type = s
 default = sans-serif
 summary = Comma separated fontconfig patterns or font file paths, later ones are used for missing glyphs
 
+[button-icon-font]
+type = s
+default =
+summary = Icon font for the titlebar buttons, a fontconfig family or a font file path. Material Symbols fonts are meant, glyphs close, remove, crop_square and filter_none. Empty or a font that is not installed uses the built in drawn icons
+
 [title-font-size]
 type = i
 default = 13

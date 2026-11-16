@@ -94,7 +94,7 @@ impl Slate {
             || old.border_unfocused != new.border_unfocused
         {
             if old.decoration.title_font != new.decoration.title_font {
-                self.fonts = Fonts::load(&new.decoration.title_font);
+                self.fonts = Fonts::load(&new.decoration.title_font, &new.decoration.icon_font);
             }
             self.decoration_generation += 1;
             let toplevels: Vec<_> = self.xdg_shell_state.toplevel_surfaces().to_vec();

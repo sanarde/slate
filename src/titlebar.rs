@@ -135,6 +135,34 @@ struct Icon {
     color: Color,
 }
 
+fn draw_glyph(canvas: &mut Canvas, params: &Params, kind: ButtonKind, cx: f32, cy: f32, half: f32, color: Color) -> bool {
+    let character = match kind {
+        ButtonKind::Close => '\u{e5cd}',
+        ButtonKind::Minimize => '\u{e15b}',
+        ButtonKind::Maximize if params.maximized => '\u{e3e0}',
+        ButtonKind::Maximize => '\u{e3c6}',
+    };
+    let size = half * 2.0 * 0.62;
+    let Some((metrics, bitmap, ascent, descent)) = params.fonts.rasterize_icon(character, size) else {
+        return false;
+    };
+
+    let baseline = cy - (ascent - descent) / 2.0 + ascent;
+    let left = (cx - metrics.advance_width / 2.0).round() as i32 + metrics.xmin;
+    let top = (baseline - metrics.height as f32 - metrics.ymin as f32).round() as i32;
+    for row in 0..metrics.height {
+        for column in 0..metrics.width {
+            let (x, y) = (left + column as i32, top + row as i32);
+            if x < 0 || y < 0 {
+                continue;
+            }
+            let value = bitmap[row * metrics.width + column] as f32 / 255.0;
+            canvas.blend(x as usize, y as usize, color, value);
+        }
+    }
+    true
+}
+
 fn draw_icon(canvas: &mut Canvas, icon: &Icon) {
     let Icon {
         kind,
@@ -244,6 +272,9 @@ pub fn render(params: &Params) -> Vec<u8> {
             ButtonShape::Square => 0.0,
         };
         canvas.fill(fill, |x, y| rounded_rect(x, y, cx, cy, half, half, corner));
+        if draw_glyph(&mut canvas, params, *kind, cx, cy, half, icon_color) {
+            continue;
+        }
         draw_icon(
             &mut canvas,
             &Icon {
@@ -371,7 +402,7 @@ mod tests {
     #[test]
     fn upper_corners_are_transparent_and_the_body_is_filled() {
         let decoration = Decoration::default();
-        let fonts = Fonts::load("");
+        let fonts = Fonts::load("", "");
         let pixels = render(&params(&decoration, &fonts));
 
         assert_eq!(pixels.len(), 200 * 30 * 4);

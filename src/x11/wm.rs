@@ -167,7 +167,7 @@ impl Wm {
         let shape_available = conn
             .extension_information(shape::X11_EXTENSION_NAME)?
             .is_some();
-        let fonts = Fonts::load(&settings.decoration.title_font);
+        let fonts = Fonts::load(&settings.decoration.title_font, &settings.decoration.icon_font);
         let mut wm = Wm {
             conn,
             root,
@@ -301,7 +301,7 @@ impl Wm {
         }
         if old.border_width != self.settings.border_width || old.decoration != self.settings.decoration {
             if old.decoration.title_font != self.settings.decoration.title_font {
-                self.fonts = Fonts::load(&self.settings.decoration.title_font);
+                self.fonts = Fonts::load(&self.settings.decoration.title_font, &self.settings.decoration.icon_font);
             }
             self.paint_generation += 1;
             let windows: Vec<Window> = self

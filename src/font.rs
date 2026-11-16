@@ -8,6 +8,7 @@ const ELLIPSIS: char = '\u{2026}';
 
 pub struct Fonts {
     faces: Vec<Font>,
+    icons: Option<Font>,
 }
 
 pub struct Glyph {
@@ -59,15 +60,35 @@ fn load_face(pattern: &str) -> Option<Font> {
     }
 }
 
+fn load_icons(pattern: &str) -> Option<Font> {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return None;
+    }
+    if !pattern.starts_with('/') {
+        let output = Command::new("fc-match").args(["-f", "%{family}", pattern]).output().ok()?;
+        let families = String::from_utf8_lossy(&output.stdout).to_lowercase();
+        let wanted = pattern.split(':').next().unwrap_or(pattern).trim().to_lowercase();
+        if !families.split(',').any(|family| family.trim() == wanted) {
+            tracing::warn!(pattern, "the icon font is not installed, using drawn icons");
+            return None;
+        }
+    }
+    load_face(pattern)
+}
+
 impl Fonts {
-    pub fn load(patterns: &str) -> Fonts {
+    pub fn load(patterns: &str, icons: &str) -> Fonts {
         let faces = patterns
             .split(',')
             .map(str::trim)
             .filter(|pattern| !pattern.is_empty())
             .filter_map(load_face)
             .collect();
-        Fonts { faces }
+        Fonts {
+            faces,
+            icons: load_icons(icons),
+        }
     }
 
     fn face_for(&self, character: char) -> Option<usize> {
@@ -126,6 +147,16 @@ impl Fonts {
             glyphs: Vec::new(),
             width: 0.0,
         }
+    }
+
+    pub fn rasterize_icon(&self, character: char, size: f32) -> Option<(Metrics, Vec<u8>, f32, f32)> {
+        let font = self.icons.as_ref()?;
+        if font.lookup_glyph_index(character) == 0 {
+            return None;
+        }
+        let line = font.horizontal_line_metrics(size)?;
+        let (metrics, bitmap) = font.rasterize(character, size);
+        Some((metrics, bitmap, line.ascent, line.descent))
     }
 
     pub fn rasterize(&self, glyph: &Glyph, size: f32) -> (Metrics, Vec<u8>) {

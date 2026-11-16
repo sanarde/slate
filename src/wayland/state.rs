@@ -206,7 +206,7 @@ impl Slate {
             session_lock_state: SessionLockManagerState::new::<Slate, _>(&display_handle, |_| true),
             lock: None,
             xdg_decoration_state: XdgDecorationState::new::<Slate>(&display_handle),
-            fonts: Fonts::load(&settings.decoration.title_font),
+            fonts: Fonts::load(&settings.decoration.title_font, &settings.decoration.icon_font),
             decoration_generation: 0,
             decoration_hover: None,
             decoration_press: None,

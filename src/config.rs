@@ -78,6 +78,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("title-color-focused", "#ffffff"),
     ("title-color-unfocused", "#cac4d0"),
     ("title-font", "sans-serif"),
+    ("button-icon-font", ""),
     ("title-font-size", "13"),
     ("title-align", "center"),
     ("title-padding", "12"),
@@ -277,6 +278,7 @@ pub struct Decoration {
     pub title_color_focused: Color,
     pub title_color_unfocused: Color,
     pub title_font: String,
+    pub icon_font: String,
     pub title_font_size: u32,
     pub title_align: Align,
     pub title_padding: u32,
@@ -484,6 +486,7 @@ fn decoration_from(values: &Values) -> Decoration {
         title_color_focused: color(values, "title-color-focused"),
         title_color_unfocused: color(values, "title-color-unfocused"),
         title_font: text(values, "title-font"),
+        icon_font: text(values, "button-icon-font"),
         title_font_size: int(values, "title-font-size", 6, 64) as u32,
         title_align: choice(
             values,
