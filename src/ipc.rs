@@ -70,6 +70,7 @@ pub struct OutputInfo {
     pub height: i32,
     pub scale: f64,
     pub enabled: bool,
+    pub workspace: usize,
 }
 
 #[derive(Default)]
@@ -330,6 +331,7 @@ fn output_json(output: &OutputInfo) -> String {
         ("height", output.height.to_string()),
         ("scale", output.scale.to_string()),
         ("enabled", output.enabled.to_string()),
+        ("workspace", (output.workspace + 1).to_string()),
     ])
 }
 
