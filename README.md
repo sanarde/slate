@@ -364,4 +364,4 @@ The Wayland backend also implements `wlr-foreign-toplevel-management`, so taskba
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE).
+GPL-3.0-only. See [LICENSE](LICENSE). The licenses of the software that Slate is built with are listed in [NOTICE](NOTICE).

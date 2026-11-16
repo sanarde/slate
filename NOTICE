@@ -1,0 +1,34 @@
+Sanar Slate
+Licensed under the GNU General Public License, version 3 only (GPL-3.0-only).
+See the file LICENSE.
+
+Slate is built with the following third party software. Every one of these
+projects is distributed under its own license, which stays valid for its code.
+All licenses listed here are compatible with the GPL-3.0-only.
+
+Direct Rust dependencies (version in Cargo.lock):
+
+  smithay              MIT                                              https://github.com/Smithay/smithay
+  x11rb                MIT OR Apache-2.0                                https://github.com/psychon/x11rb
+  fontdue              MIT OR Apache-2.0 OR Zlib                        https://github.com/mooman219/fontdue
+  libloading           ISC                                              https://github.com/nagisa/rust_libloading
+  rustix               Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT   https://github.com/bytecodealliance/rustix
+  tracing              MIT                                              https://github.com/tokio-rs/tracing
+  tracing-subscriber   MIT                                              https://github.com/tokio-rs/tracing
+  xcursor              MIT                                              https://github.com/esposm03/xcursor-rs
+  cc (build only)      MIT OR Apache-2.0                                https://github.com/rust-lang/cc-rs
+
+The crates that these depend on carry their own licenses. List them with
+`cargo metadata` or `cargo tree`.
+
+Fonts. Slate does not contain or distribute any font. It loads fonts that are
+installed on the system at run time, through fontconfig or by file path. The
+fonts that the theme material-you asks for, and that SanarStyle ships, have
+these licenses:
+
+  Roboto Flex             SIL Open Font License 1.1   Copyright 2017 The Roboto Flex Project Authors
+  Material Symbols        Apache License 2.0          Copyright Google LLC
+
+Programs started or used at run time, such as libcfgd, seuratd, Xwayland and
+fontconfig, are separate programs under their own licenses and are not part of
+Slate.
