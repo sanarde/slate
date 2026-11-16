@@ -599,12 +599,7 @@ impl Wm {
     }
 
     fn monitor_index(&self, rect: &Rect) -> usize {
-        self.monitors
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, monitor)| monitor.overlap_area(rect))
-            .map(|(index, _)| index)
-            .unwrap_or(0)
+        super::geometry::monitor_index(&self.monitors, rect)
     }
 
     pub(super) fn pointer_monitor(&self) -> usize {
