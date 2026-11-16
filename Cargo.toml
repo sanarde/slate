@@ -37,5 +37,5 @@ libloading = "0.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rustix = { version = "1", features = ["event", "time"] }
-x11rb = { version = "0.13", features = ["randr", "shape"] }
+x11rb = { version = "0.13", features = ["randr", "shape", "allow-unsafe-code"] }
 xcursor = "0.3"

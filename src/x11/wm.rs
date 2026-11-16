@@ -14,7 +14,7 @@ use x11rb::protocol::randr::{self, ConnectionExt as _};
 use x11rb::protocol::shape;
 use x11rb::protocol::xproto::*;
 use x11rb::protocol::Event;
-use x11rb::rust_connection::RustConnection;
+use x11rb::xcb_ffi::XCBConnection;
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{CURRENT_TIME, NONE};
 
@@ -123,7 +123,7 @@ struct Drag {
 }
 
 pub struct Wm {
-    conn: RustConnection,
+    conn: XCBConnection,
     root: Window,
     screen: Rect,
     atoms: Atoms,
@@ -158,7 +158,7 @@ pub struct Wm {
 }
 
 impl Wm {
-    pub fn new(conn: RustConnection, screen_num: usize, settings: Settings, config: ConfigSource) -> Result<Wm> {
+    pub fn new(conn: XCBConnection, screen_num: usize, settings: Settings, config: ConfigSource) -> Result<Wm> {
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
         let screen_rect = Rect::new(0, 0, screen.width_in_pixels as u32, screen.height_in_pixels as u32);
@@ -268,7 +268,7 @@ impl Wm {
                 break;
             }
 
-            let mut fds = vec![PollFd::new(self.conn.stream(), PollFlags::IN)];
+            let mut fds = vec![PollFd::new(&self.conn, PollFlags::IN)];
             if let Some(notify) = &notify {
                 fds.push(PollFd::new(notify, PollFlags::IN));
             }

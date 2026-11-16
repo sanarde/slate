@@ -49,6 +49,10 @@ void sl_composite_over(const uint8_t *argb, size_t pixels, uint32_t background, 
 size_t sl_shape_spans(const uint8_t *argb, size_t length, int32_t width, int32_t rows, uint8_t threshold,
 		      struct sl_span *spans);
 
+size_t sl_rows_per_request(size_t max_request_bytes, size_t row_bytes, size_t height);
+int sl_put_image_rows(void *connection, uint32_t drawable, uint32_t gc, uint16_t width, uint16_t height,
+		      uint8_t depth, size_t max_request_bytes, const uint8_t *data);
+
 int sl_rect_contains(const struct sl_rect *rect, int32_t x, int32_t y);
 int sl_strut_parse(const uint32_t *values, size_t count, struct sl_strut *strut);
 void sl_strut_merge(struct sl_strut *into, const struct sl_strut *other);

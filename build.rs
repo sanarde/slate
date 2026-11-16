@@ -9,9 +9,12 @@ fn main() {
         .file("c/geometry.c")
         .file("c/keys.c")
         .file("c/pixels.c")
+        .file("c/xcb.c")
         .std("c11")
         .warnings(true)
         .flag("-Wpedantic")
         .flag_if_supported("-Werror")
         .compile("slate_x11");
+
+    println!("cargo:rustc-link-lib=xcb");
 }

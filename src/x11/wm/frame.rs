@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use x11rb::NONE;
-use x11rb::connection::{Connection, RequestConnection};
+use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::*;
 use x11rb::wrapper::ConnectionExt as _;
@@ -14,6 +14,7 @@ use crate::titlebar::{self, Params};
 use crate::x11::framing;
 use crate::x11::geometry::Rect;
 use crate::x11::pixels;
+use crate::x11::xcb;
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 const MOTIF_DECORATIONS: u32 = 2;
@@ -424,26 +425,7 @@ impl Wm {
     fn put_titlebar(&self, frame: Window, width: i32, height: i32, argb: &[u8], background: u32) -> Result<()> {
         let data = pixels::composite_over(argb, background);
 
-        let row_bytes = width as usize * 4;
-        let budget = (self.conn.maximum_request_bytes().saturating_sub(64)).max(row_bytes);
-        let rows_per_request = (budget / row_bytes).clamp(1, height as usize);
-        let mut row = 0;
-        while row < height as usize {
-            let rows = rows_per_request.min(height as usize - row);
-            self.conn.put_image(
-                ImageFormat::Z_PIXMAP,
-                frame,
-                self.gc,
-                width as u16,
-                rows as u16,
-                0,
-                row as i16,
-                0,
-                self.depth,
-                &data[row * row_bytes..(row + rows) * row_bytes],
-            )?;
-            row += rows;
-        }
+        xcb::put_image(&self.conn, frame, self.gc, width as u16, height as u16, self.depth, &data)?;
         Ok(())
     }
 
