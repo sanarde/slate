@@ -39,6 +39,16 @@ uint32_t sl_edge_cursor_glyph(uint32_t edges);
 void sl_configure_notify(uint8_t *out, uint32_t window, int32_t x, int32_t y, uint32_t width,
 			 uint32_t height, uint32_t border_width);
 
+struct sl_span {
+	int32_t row;
+	int32_t first;
+	int32_t last;
+};
+
+void sl_composite_over(const uint8_t *argb, size_t pixels, uint32_t background, uint8_t *out);
+size_t sl_shape_spans(const uint8_t *argb, size_t length, int32_t width, int32_t rows, uint8_t threshold,
+		      struct sl_span *spans);
+
 int sl_rect_contains(const struct sl_rect *rect, int32_t x, int32_t y);
 int sl_strut_parse(const uint32_t *values, size_t count, struct sl_strut *strut);
 void sl_strut_merge(struct sl_strut *into, const struct sl_strut *other);

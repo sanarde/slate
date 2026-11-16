@@ -13,6 +13,7 @@ use crate::config::{ButtonKind, ClickAction, Color, DecorationMode, RuleMode};
 use crate::titlebar::{self, Params};
 use crate::x11::framing;
 use crate::x11::geometry::Rect;
+use crate::x11::pixels;
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 const MOTIF_DECORATIONS: u32 = 2;
@@ -421,20 +422,7 @@ impl Wm {
     }
 
     fn put_titlebar(&self, frame: Window, width: i32, height: i32, argb: &[u8], background: u32) -> Result<()> {
-        let [bg_red, bg_green, bg_blue] = [
-            ((background >> 16) & 0xff) as f32,
-            ((background >> 8) & 0xff) as f32,
-            (background & 0xff) as f32,
-        ];
-
-        let mut data = Vec::with_capacity(argb.len());
-        for pixel in argb.as_chunks::<4>().0 {
-            let covered = 1.0 - pixel[3] as f32 / 255.0;
-            data.push((pixel[0] as f32 + bg_blue * covered).round().min(255.0) as u8);
-            data.push((pixel[1] as f32 + bg_green * covered).round().min(255.0) as u8);
-            data.push((pixel[2] as f32 + bg_red * covered).round().min(255.0) as u8);
-            data.push(0);
-        }
+        let data = pixels::composite_over(argb, background);
 
         let row_bytes = width as usize * 4;
         let budget = (self.conn.maximum_request_bytes().saturating_sub(64)).max(row_bytes);
@@ -477,20 +465,15 @@ impl Wm {
         };
 
         let corner_rows = (radius + 1).min(top);
-        let mut rectangles = Vec::new();
-        for row in 0..corner_rows {
-            let alpha = |column: i32| argb[((row * width + column) * 4 + 3) as usize];
-            let first = (0..width).find(|column| alpha(*column) >= SHAPE_CORNER_ALPHA);
-            let last = (0..width).rev().find(|column| alpha(*column) >= SHAPE_CORNER_ALPHA);
-            if let (Some(first), Some(last)) = (first, last) {
-                rectangles.push(Rectangle {
-                    x: first as i16,
-                    y: row as i16,
-                    width: (last - first + 1) as u16,
-                    height: 1,
-                });
-            }
-        }
+        let mut rectangles: Vec<Rectangle> = pixels::shape_spans(argb, width, corner_rows, SHAPE_CORNER_ALPHA)
+            .into_iter()
+            .map(|span| Rectangle {
+                x: span.first as i16,
+                y: span.row as i16,
+                width: (span.last - span.first + 1) as u16,
+                height: 1,
+            })
+            .collect();
         rectangles.push(Rectangle {
             x: 0,
             y: corner_rows as i16,

@@ -8,6 +8,7 @@ fn main() {
         .file("c/frame.c")
         .file("c/geometry.c")
         .file("c/keys.c")
+        .file("c/pixels.c")
         .std("c11")
         .warnings(true)
         .flag("-Wpedantic")

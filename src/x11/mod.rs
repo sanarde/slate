@@ -4,6 +4,7 @@ mod atoms;
 mod framing;
 mod geometry;
 mod keys;
+mod pixels;
 mod wm;
 
 use std::error::Error;
