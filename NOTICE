@@ -1,4 +1,5 @@
 Sanar Slate
+Copyright (C) 2026 AnmiTaliDev
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only).
 See the file LICENSE.
 
@@ -27,7 +28,7 @@ fonts that the theme material-you asks for, and that SanarStyle ships, have
 these licenses:
 
   Roboto Flex             SIL Open Font License 1.1   Copyright 2017 The Roboto Flex Project Authors
-  Material Symbols        Apache License 2.0          Copyright Google LLC
+  Material Symbols        Apache License 2.0          see https://github.com/google/material-design-icons
 
 Programs started or used at run time, such as libcfgd, seuratd, Xwayland and
 fontconfig, are separate programs under their own licenses and are not part of
