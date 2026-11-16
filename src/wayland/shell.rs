@@ -208,6 +208,7 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     if !state.pending_windows.contains(window) {
         ipc::window_event(state, "window-close", window);
     }
+    let output = window_output(state, window);
     state.pending_windows.retain(|pending| pending != window);
     state.parked.retain(|(parked, _)| parked != window);
     state.minimized.retain(|(minimized, _)| minimized != window);
@@ -216,8 +217,15 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     grabs::forget_window(state, window);
     tiling::forget(state, window);
     animation::forget(state, window);
+    decoration::forget(state, window);
+    super::switcher::forget(state, window);
+    let id = window_id(window);
+    state.clip_styles.borrow_mut().retain(|(known, _), _| *known != id);
 
-    let top = state.space.elements().next_back().cloned();
+    let top = output
+        .as_ref()
+        .and_then(|output| top_on(state, output))
+        .or_else(|| state.space.elements().next_back().cloned());
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
     foreign_toplevel::refresh(state);
@@ -251,7 +259,7 @@ pub fn focus_window(state: &mut Slate, window: Option<&Window>, serial: Serial) 
     }
 
     let focus = window.and_then(KeyFocus::from_window);
-    let keyboard = state.seat.get_keyboard().unwrap();
+    let keyboard = state.keyboard();
     keyboard.set_focus(state, focus, serial);
 
     let id = window.map(window_id);
@@ -509,9 +517,12 @@ pub fn restore_window(state: &mut Slate, window: &Window) {
     };
     let (window, location) = state.minimized.remove(index);
 
-    state.minimized.push((window.clone(), location));
-    show_workspace_of(state, &window);
-    state.minimized.retain(|(known, _)| known != &window);
+    if let Some(output) = output_at(state, location).or_else(|| active_output(state)) {
+        let workspace = workspace_of(&window);
+        if workspace != workspace_on(state, &output) {
+            switch_workspace_on(state, &output, workspace);
+        }
+    }
     state.space.map_element(window.clone(), location, true);
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
@@ -562,10 +573,11 @@ pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
 }
 
 pub fn cycle_focus(state: &mut Slate, forward: bool) {
+    let output = active_output(state);
     let windows: Vec<Window> = state
         .space
         .elements()
-        .filter(|window| !is_override_redirect(window))
+        .filter(|window| !is_override_redirect(window) && window_output(state, window) == output)
         .cloned()
         .collect();
     if windows.len() < 2 {
@@ -773,7 +785,7 @@ pub(super) fn output_for_window(state: &Slate, window: &Window) -> Option<Output
 }
 
 pub(super) fn active_zone(state: &Slate) -> Rectangle<i32, Logical> {
-    let pointer = state.seat.get_pointer().unwrap().current_location();
+    let pointer = state.pointer().current_location();
     let output = state
         .space
         .output_under(pointer)

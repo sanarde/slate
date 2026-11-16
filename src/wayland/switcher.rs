@@ -114,6 +114,23 @@ pub fn toggle_overview(state: &mut Slate) {
     });
 }
 
+pub fn forget(state: &mut Slate, window: &Window) {
+    let Some(switcher) = state.switcher.as_mut() else {
+        return;
+    };
+    let Some(index) = switcher.windows.iter().position(|known| known == window) else {
+        return;
+    };
+    switcher.windows.remove(index);
+    if switcher.windows.is_empty() {
+        state.switcher = None;
+        return;
+    }
+    if switcher.selected > index || switcher.selected >= switcher.windows.len() {
+        switcher.selected = switcher.selected.saturating_sub(1).min(switcher.windows.len() - 1);
+    }
+}
+
 pub fn cancel(state: &mut Slate) {
     state.switcher = None;
 }

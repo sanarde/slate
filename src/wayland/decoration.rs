@@ -108,6 +108,18 @@ fn ring_pixels(width: usize, height: usize, outer: f32, border: f32, color: Colo
     bytes
 }
 
+pub fn forget(state: &mut Slate, window: &Window) {
+    if state.decoration_hover.as_ref().is_some_and(|(hovered, _)| hovered == window) {
+        state.decoration_hover = None;
+    }
+    if state.decoration_press.as_ref().is_some_and(|(pressed, _)| pressed == window) {
+        state.decoration_press = None;
+    }
+    if state.last_title_click.as_ref().is_some_and(|(clicked, _)| clicked == window) {
+        state.last_title_click = None;
+    }
+}
+
 pub fn app_id(window: &Window) -> String {
     if let Some(toplevel) = window.toplevel() {
         return with_states(toplevel.wl_surface(), |states| {

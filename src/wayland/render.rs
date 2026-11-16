@@ -46,12 +46,13 @@ pub fn output_elements(
     with_cursor: bool,
 ) -> Vec<OutputElement> {
     animation::prune(state);
+    super::blur::recycle(state);
     super::closing::capture(state, renderer, output);
     let mut elements = Vec::new();
 
     if let Some(output_geometry) = state.space.output_geometry(output) {
         let scale = output.current_scale().fractional_scale();
-        let pointer = state.seat.get_pointer().unwrap().current_location();
+        let pointer = state.pointer().current_location();
         if with_cursor && output_geometry.to_f64().contains(pointer) {
             let location = pointer - output_geometry.loc.to_f64();
             cursor_elements(state, renderer, location, scale, &mut elements);
@@ -138,7 +139,7 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
         let is_focused = focused.as_ref() == Some(window);
         let group = window_group(state, renderer, output, window, output_geometry.loc, scale, alpha, frame, is_focused);
 
-        let blurred = applied.blur && effect.is_none() && !fullscreen_or_hidden(window);
+        let blurred = applied.blur && effect.is_none() && !shell::flags(window).1;
         match (effect, frame) {
             (Some(effect), Some(frame)) => elements.extend(wrap(group, &effect, frame, output_geometry.loc, scale)),
             _ => elements.extend(group),
@@ -155,10 +156,6 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
             elements.insert(index, blur);
         }
     }
-}
-
-fn fullscreen_or_hidden(window: &smithay::desktop::Window) -> bool {
-    shell::flags(window).1
 }
 
 #[allow(clippy::too_many_arguments)]
