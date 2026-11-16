@@ -332,6 +332,7 @@ slatectl state                      # workspaces, windows and outputs
 slatectl windows                    # id, title, app_id, workspace, focused, floating, tiled, maximized, fullscreen, minimized
 slatectl focus ID                   # also restores a minimized window and changes the workspace
 slatectl action workspace 3         # any action of the key bindings, for example action exec foot
+slatectl action focus-monitor right  # monitors, the switcher, scratchpads and the rest work the same way
 slatectl layout 2 spiral
 slatectl move-to-workspace ID 4
 slatectl subscribe                  # JSON lines until interrupted
