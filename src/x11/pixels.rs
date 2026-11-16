@@ -1,16 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#[derive(Clone, Copy, Default, PartialEq, Debug)]
-#[repr(C)]
-pub struct Span {
-    pub row: i32,
-    pub first: i32,
-    pub last: i32,
-}
-
 unsafe extern "C" {
     fn sl_composite_over(argb: *const u8, pixels: usize, background: u32, out: *mut u8);
-    fn sl_shape_spans(argb: *const u8, length: usize, width: i32, rows: i32, threshold: u8, spans: *mut Span) -> usize;
 }
 
 pub fn composite_over(argb: &[u8], background: u32) -> Vec<u8> {
@@ -20,19 +11,31 @@ pub fn composite_over(argb: &[u8], background: u32) -> Vec<u8> {
     out
 }
 
-pub fn shape_spans(argb: &[u8], width: i32, rows: i32, threshold: u8) -> Vec<Span> {
-    if width <= 0 || rows <= 0 {
-        return Vec::new();
-    }
-    let mut spans = vec![Span::default(); rows as usize];
-    let count = unsafe { sl_shape_spans(argb.as_ptr(), argb.len(), width, rows, threshold, spans.as_mut_ptr()) };
-    spans.truncate(count);
-    spans
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Copy, Default, PartialEq, Debug)]
+    #[repr(C)]
+    struct Span {
+        row: i32,
+        first: i32,
+        last: i32,
+    }
+
+    unsafe extern "C" {
+        fn sl_shape_spans(argb: *const u8, length: usize, width: i32, rows: i32, threshold: u8, spans: *mut Span) -> usize;
+    }
+
+    fn shape_spans(argb: &[u8], width: i32, rows: i32, threshold: u8) -> Vec<Span> {
+        if width <= 0 || rows <= 0 {
+            return Vec::new();
+        }
+        let mut spans = vec![Span::default(); rows as usize];
+        let count = unsafe { sl_shape_spans(argb.as_ptr(), argb.len(), width, rows, threshold, spans.as_mut_ptr()) };
+        spans.truncate(count);
+        spans
+    }
 
     fn reference(argb: &[u8], background: u32) -> Vec<u8> {
         let [red, green, blue] = [
