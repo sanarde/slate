@@ -223,7 +223,7 @@ pub fn render(params: &Params) -> Vec<u8> {
     } else {
         decoration.button_icon_color_unfocused
     };
-    let stroke = (2.0 * scale).max(1.0);
+    let stroke = (1.7 * scale).max(1.0);
     for (kind, rect) in &buttons {
         let cx = params.frame_left + (rect.loc.x as f32 + rect.size.w as f32 / 2.0) * scale;
         let cy = params.frame_top + (rect.loc.y as f32 + rect.size.h as f32 / 2.0) * scale;
