@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,6 +14,8 @@ use crate::bindings::{self, Action};
 use crate::json;
 
 const REPLY_TIMEOUT: Duration = Duration::from_secs(2);
+const MAX_LINE: u64 = 64 * 1024;
+const EVENT_BACKLOG: usize = 256;
 
 pub struct Request {
     line: String,
@@ -23,7 +25,7 @@ pub struct Request {
 pub struct Ipc {
     requests: Receiver<Request>,
     wake: OwnedFd,
-    subscribers: Arc<Mutex<Vec<Sender<String>>>>,
+    subscribers: Arc<Mutex<Vec<SyncSender<String>>>>,
     path: PathBuf,
 }
 
@@ -127,25 +129,29 @@ fn wake(fd: &OwnedFd) {
 fn serve_client(
     stream: UnixStream,
     requests: Sender<Request>,
-    subscribers: Arc<Mutex<Vec<Sender<String>>>>,
+    subscribers: Arc<Mutex<Vec<SyncSender<String>>>>,
     wake_fd: Arc<OwnedFd>,
 ) {
     let Ok(reader) = stream.try_clone() else {
         return;
     };
     let mut writer = stream;
+    let mut reader = BufReader::new(reader);
 
-    for line in BufReader::new(reader).lines() {
-        let Ok(line) = line else {
-            return;
-        };
+    loop {
+        let mut line = String::new();
+        match reader.by_ref().take(MAX_LINE).read_line(&mut line) {
+            Ok(0) | Err(_) => return,
+            Ok(_) if !line.ends_with('\n') => return,
+            Ok(_) => {}
+        }
         let line = line.trim().to_string();
         if line.is_empty() {
             continue;
         }
 
         if line == "subscribe" {
-            let (sender, events) = mpsc::channel();
+            let (sender, events) = mpsc::sync_channel(EVENT_BACKLOG);
             subscribers.lock().unwrap().push(sender);
             if writeln!(writer, "{}", json::object(&[("ok", "true".to_string())])).is_err() {
                 return;
@@ -180,7 +186,7 @@ impl Ipc {
         let thread_wake = Arc::new(rustix::io::fcntl_dupfd_cloexec(&wake_fd, 0).ok()?);
 
         let (sender, receiver) = mpsc::channel();
-        let subscribers: Arc<Mutex<Vec<Sender<String>>>> = Arc::new(Mutex::new(Vec::new()));
+        let subscribers: Arc<Mutex<Vec<SyncSender<String>>>> = Arc::new(Mutex::new(Vec::new()));
         let accept_subscribers = subscribers.clone();
 
         std::thread::spawn(move || {
@@ -213,7 +219,7 @@ impl Ipc {
         self.subscribers
             .lock()
             .unwrap()
-            .retain(|subscriber| subscriber.send(event.clone()).is_ok());
+            .retain(|subscriber| subscriber.try_send(event.clone()).is_ok());
     }
 
     fn drain_wake(&self) {
