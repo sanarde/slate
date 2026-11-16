@@ -9,6 +9,7 @@ fn main() {
         .file("c/geometry.c")
         .file("c/keys.c")
         .file("c/pixels.c")
+        .file("c/shape.c")
         .file("c/xcb.c")
         .std("c11")
         .warnings(true)
@@ -17,4 +18,5 @@ fn main() {
         .compile("slate_x11");
 
     println!("cargo:rustc-link-lib=xcb");
+    println!("cargo:rustc-link-lib=xcb-shape");
 }

@@ -49,6 +49,19 @@ void sl_composite_over(const uint8_t *argb, size_t pixels, uint32_t background, 
 size_t sl_shape_spans(const uint8_t *argb, size_t length, int32_t width, int32_t rows, uint8_t threshold,
 		      struct sl_span *spans);
 
+struct sl_rectangle {
+	int16_t x;
+	int16_t y;
+	uint16_t width;
+	uint16_t height;
+};
+
+size_t sl_shape_rectangles(const uint8_t *argb, size_t length, int32_t width, int32_t height, int32_t top,
+			   int32_t radius, struct sl_rectangle *out, size_t capacity);
+int sl_shape_clear(void *connection, uint32_t frame);
+int sl_shape_rounded(void *connection, uint32_t frame, const uint8_t *argb, size_t length, int32_t width,
+		     int32_t height, int32_t top, int32_t radius);
+
 size_t sl_rows_per_request(size_t max_request_bytes, size_t row_bytes, size_t height);
 int sl_put_image_rows(void *connection, uint32_t drawable, uint32_t gc, uint16_t width, uint16_t height,
 		      uint8_t depth, size_t max_request_bytes, const uint8_t *data);

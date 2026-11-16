@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use x11rb::NONE;
 use x11rb::connection::Connection;
-use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::*;
 use x11rb::wrapper::ConnectionExt as _;
 
@@ -21,7 +20,6 @@ const MOTIF_DECORATIONS: u32 = 2;
 const BUTTON_LEFT: u8 = 1;
 const BUTTON_MIDDLE: u8 = 2;
 const BUTTON_RIGHT: u8 = 3;
-const SHAPE_CORNER_ALPHA: u8 = 128;
 
 pub(super) use crate::x11::framing::Insets;
 
@@ -430,7 +428,7 @@ impl Wm {
     }
 
     fn update_shape(&mut self, index: usize, frame: Window, size: [i32; 4], argb: &[u8]) -> Result<()> {
-        let [width, height, top, radius] = size;
+        let [width, height, _, radius] = size;
         if !self.shape_available {
             return Ok(());
         }
@@ -440,37 +438,11 @@ impl Wm {
         }
         self.clients[index].shaped = wanted;
 
-        let Some((_, _, radius)) = wanted else {
-            self.conn
-                .shape_mask(shape::SO::SET, shape::SK::BOUNDING, frame, 0, 0, NONE)?;
+        if wanted.is_none() {
+            xcb::shape_clear(&self.conn, frame)?;
             return Ok(());
-        };
-
-        let corner_rows = (radius + 1).min(top);
-        let mut rectangles: Vec<Rectangle> = pixels::shape_spans(argb, width, corner_rows, SHAPE_CORNER_ALPHA)
-            .into_iter()
-            .map(|span| Rectangle {
-                x: span.first as i16,
-                y: span.row as i16,
-                width: (span.last - span.first + 1) as u16,
-                height: 1,
-            })
-            .collect();
-        rectangles.push(Rectangle {
-            x: 0,
-            y: corner_rows as i16,
-            width: width as u16,
-            height: (height - corner_rows) as u16,
-        });
-        self.conn.shape_rectangles(
-            shape::SO::SET,
-            shape::SK::BOUNDING,
-            ClipOrdering::UNSORTED,
-            frame,
-            0,
-            0,
-            &rectangles,
-        )?;
+        }
+        xcb::shape_rounded(&self.conn, frame, argb, size)?;
         Ok(())
     }
 
