@@ -202,6 +202,7 @@ impl Wm {
             AtomEnum::CARDINAL,
             &[insets.left as u32, insets.right as u32, insets.top as u32, insets.bottom as u32],
         )?;
+        self.send_configure_notify(window)?;
         self.repaint(window)
     }
 

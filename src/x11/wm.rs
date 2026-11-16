@@ -37,6 +37,7 @@ use crate::rules::{self, Applied, Position};
 use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
+const NORMAL_STATE: u32 = 1;
 const ICONIC_STATE: u32 = 3;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -926,6 +927,7 @@ impl Wm {
             self.set_geometry(window, rect, border)?;
         }
         self.map_client(window)?;
+        self.set_wm_state(window, NORMAL_STATE)?;
         self.update_client_list()?;
         self.register_tiled(window);
         let forced = applied.floating.or((applied.sticky || applied.scratchpad.is_some()).then_some(true));
@@ -952,6 +954,38 @@ impl Wm {
         {
             self.move_to_workspace(window, target)?;
         }
+        Ok(())
+    }
+
+    fn set_wm_state(&self, window: Window, state: u32) -> Result<()> {
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            self.atoms.WM_STATE,
+            self.atoms.WM_STATE,
+            &[state, NONE],
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn send_configure_notify(&self, window: Window) -> Result<()> {
+        let Some(client) = self.clients.iter().find(|client| client.window == window) else {
+            return Ok(());
+        };
+        let event = ConfigureNotifyEvent {
+            response_type: CONFIGURE_NOTIFY_EVENT,
+            sequence: 0,
+            event: window,
+            window,
+            above_sibling: NONE,
+            x: client.rect.x as i16,
+            y: client.rect.y as i16,
+            width: client.rect.w as u16,
+            height: client.rect.h as u16,
+            border_width: if client.frame.is_some() { 0 } else { self.settings.border_width as u16 },
+            override_redirect: false,
+        };
+        self.conn.send_event(false, window, EventMask::STRUCTURE_NOTIFY, event)?;
         Ok(())
     }
 
@@ -1167,6 +1201,7 @@ impl Wm {
         };
         self.emit("window-close", &[("id", window.to_string())]);
         let removed = self.clients.remove(index);
+        let _ = self.conn.delete_property(window, self.atoms.WM_STATE);
         let removed_monitor = self.monitor_index(&removed.rect);
         if let Some(frame) = removed.frame {
             self.conn
@@ -1273,9 +1308,12 @@ impl Wm {
         if client.minimized {
             return Ok(());
         }
-        client.minimized = true;
         let was_hidden = client.hidden;
+        let rect = client.rect;
+        client.minimized = true;
         client.hidden = true;
+
+        self.set_wm_state(window, ICONIC_STATE)?;
         if !was_hidden {
             self.unmap_client(window)?;
         }
@@ -1285,8 +1323,7 @@ impl Wm {
 
         if self.focused == Some(window) {
             self.focused = None;
-            let monitor = self.clients.iter().find(|client| client.window == window).map_or(0, |client| self.monitor_index(&client.rect));
-            match self.focus_candidate(monitor) {
+            match self.focus_candidate(self.monitor_index(&rect)) {
                 Some(top) => self.focus(top)?,
                 None => {
                     self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -1306,14 +1343,15 @@ impl Wm {
             return Ok(());
         }
         client.minimized = false;
-        let workspace = client.workspace;
-        let rect = client.rect;
+        let (workspace, rect, hidden) = (client.workspace, client.rect, client.hidden);
+
+        self.set_wm_state(window, NORMAL_STATE)?;
         self.minimize_order.retain(|minimized| *minimized != window);
 
         let monitor = self.monitor_index(&rect);
         if workspace != self.workspace_on(monitor) {
             self.switch_workspace_on(monitor, workspace)?;
-        } else if self.clients.iter().any(|client| client.window == window && client.hidden) {
+        } else if hidden {
             self.sync_frame(window)?;
             self.set_hidden(window, false);
             self.map_client(window)?;
@@ -1503,7 +1541,7 @@ impl Wm {
 
         let client = &mut self.clients[index];
         if client.maximized || client.fullscreen || client.tiled {
-            return Ok(());
+            return self.send_configure_notify(event.window);
         }
         if event.value_mask.contains(ConfigWindow::X) {
             client.rect.x = event.x as i32;
@@ -1785,6 +1823,19 @@ impl Wm {
             None => {
                 rect.x += dx;
                 rect.y += dy;
+                if let Some(index) = self.clients.iter().position(|client| client.window == window) {
+                    let insets = self.insets_for(index);
+                    let frame = (
+                        rect.x - insets.left,
+                        rect.y - insets.top,
+                        rect.w as i32 + insets.left + insets.right,
+                        rect.h as i32 + insets.top + insets.bottom,
+                    );
+                    let bounds = self.bounds();
+                    let (fx, fy) = crate::monitors::keep_reachable(frame, (bounds.x, bounds.y, bounds.w as i32, bounds.h as i32));
+                    rect.x += fx - frame.0;
+                    rect.y += fy - frame.1;
+                }
             }
             Some(edges) => {
                 let mut width = rect.w as i32;
