@@ -439,3 +439,34 @@ summary = Action of a swipe up. Wayland on a TTY only
 type = s
 default = none
 summary = Action of a swipe down. Wayland on a TTY only
+
+[round-content]
+type = b
+default = true
+summary = Clip the content of windows with a server side frame to the rounded corners, Wayland only
+
+[dim-inactive]
+type = i
+default = 0
+min = 0
+max = 80
+summary = Percent by which windows that are not focused are darkened, 0 turns it off, Wayland only
+
+[animate-close]
+type = b
+default = true
+summary = Fade and shrink a window when it is closed from Slate (titlebar, key binding, panel, slatectl), Wayland only
+
+[blur-radius]
+type = i
+default = 3
+min = 0
+max = 32
+summary = Strength of the blur behind windows that have the blur window rule, 0 turns it off. The area under such a window is redrawn on every frame, Wayland only
+
+[blur-passes]
+type = i
+default = 2
+min = 1
+max = 4
+summary = Number of blur passes, more is smoother and slower, Wayland only

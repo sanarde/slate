@@ -22,6 +22,7 @@ pub enum RuleAction {
     Opacity(f32),
     NoShadow,
     NoDecoration,
+    Blur,
     Scratchpad(String),
 }
 
@@ -63,6 +64,7 @@ pub struct Applied {
     pub opacity: Option<f32>,
     pub no_shadow: bool,
     pub no_decoration: bool,
+    pub blur: bool,
     pub scratchpad: Option<String>,
 }
 
@@ -145,6 +147,7 @@ fn parse_action(text: &str) -> Result<RuleAction, String> {
         "maximize" => RuleAction::Maximize,
         "no-shadow" => RuleAction::NoShadow,
         "no-decoration" => RuleAction::NoDecoration,
+        "blur" => RuleAction::Blur,
         "workspace" => RuleAction::Workspace(parse_workspace(argument)?),
         "scratchpad" => {
             if argument.is_empty() {
@@ -251,6 +254,7 @@ pub fn apply(rules: &[Rule], app_id: &str, title: &str) -> Applied {
                 RuleAction::Opacity(value) => applied.opacity = Some(*value),
                 RuleAction::NoShadow => applied.no_shadow = true,
                 RuleAction::NoDecoration => applied.no_decoration = true,
+                RuleAction::Blur => applied.blur = true,
                 RuleAction::Scratchpad(name) => applied.scratchpad = Some(name.clone()),
             }
         }
