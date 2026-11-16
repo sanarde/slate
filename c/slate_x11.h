@@ -21,10 +21,11 @@ struct sl_strut {
 };
 
 int sl_rect_contains(const struct sl_rect *rect, int32_t x, int32_t y);
-struct sl_rect sl_rect_union(const struct sl_rect *a, const struct sl_rect *b);
-int64_t sl_rect_overlap_area(const struct sl_rect *a, const struct sl_rect *b);
-struct sl_rect sl_rect_work_area(const struct sl_rect *monitor, const struct sl_rect *bounds,
-				 const struct sl_strut *strut);
+int sl_strut_parse(const uint32_t *values, size_t count, struct sl_strut *strut);
+void sl_strut_merge(struct sl_strut *into, const struct sl_strut *other);
+struct sl_rect sl_bounds(const struct sl_rect *monitors, size_t count, const struct sl_rect *fallback);
+void sl_work_areas(const struct sl_rect *monitors, size_t count, const struct sl_rect *bounds,
+		   const struct sl_strut *strut, struct sl_rect *areas);
 size_t sl_monitor_index(const struct sl_rect *monitors, size_t count, const struct sl_rect *rect);
 
 #endif

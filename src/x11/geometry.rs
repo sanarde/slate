@@ -20,8 +20,10 @@ pub struct Strut {
 
 unsafe extern "C" {
     fn sl_rect_contains(rect: *const Rect, x: i32, y: i32) -> i32;
-    fn sl_rect_union(a: *const Rect, b: *const Rect) -> Rect;
-    fn sl_rect_work_area(monitor: *const Rect, bounds: *const Rect, strut: *const Strut) -> Rect;
+    fn sl_strut_parse(values: *const u32, count: usize, strut: *mut Strut) -> i32;
+    fn sl_strut_merge(into: *mut Strut, other: *const Strut);
+    fn sl_bounds(monitors: *const Rect, count: usize, fallback: *const Rect) -> Rect;
+    fn sl_work_areas(monitors: *const Rect, count: usize, bounds: *const Rect, strut: *const Strut, areas: *mut Rect);
     fn sl_monitor_index(monitors: *const Rect, count: usize, rect: *const Rect) -> usize;
 }
 
@@ -34,13 +36,27 @@ impl Rect {
         unsafe { sl_rect_contains(self, x, y) != 0 }
     }
 
-    pub fn union(&self, other: &Rect) -> Rect {
-        unsafe { sl_rect_union(self, other) }
+}
+
+impl Strut {
+    pub fn parse(values: &[u32]) -> Option<Strut> {
+        let mut strut = Strut::default();
+        (unsafe { sl_strut_parse(values.as_ptr(), values.len(), &mut strut) } != 0).then_some(strut)
     }
 
-    pub fn work_area(&self, bounds: &Rect, strut: &Strut) -> Rect {
-        unsafe { sl_rect_work_area(self, bounds, strut) }
+    pub fn merge(&mut self, other: &Strut) {
+        unsafe { sl_strut_merge(self, other) }
     }
+}
+
+pub fn bounds(monitors: &[Rect], fallback: &Rect) -> Rect {
+    unsafe { sl_bounds(monitors.as_ptr(), monitors.len(), fallback) }
+}
+
+pub fn work_areas(monitors: &[Rect], bounds: &Rect, strut: &Strut) -> Vec<Rect> {
+    let mut areas = vec![Rect::default(); monitors.len()];
+    unsafe { sl_work_areas(monitors.as_ptr(), monitors.len(), bounds, strut, areas.as_mut_ptr()) };
+    areas
 }
 
 pub fn monitor_index(monitors: &[Rect], rect: &Rect) -> usize {
@@ -62,10 +78,9 @@ mod tests {
     }
 
     #[test]
-    fn the_union_covers_both_rectangles() {
-        let a = Rect::new(0, 0, 100, 100);
-        let b = Rect::new(-50, 80, 60, 100);
-        assert_eq!(a.union(&b), Rect::new(-50, 0, 150, 180));
+    fn the_bounds_of_overlapping_and_negative_monitors_cover_all_of_them() {
+        let monitors = [Rect::new(0, 0, 100, 100), Rect::new(-50, 80, 60, 100)];
+        assert_eq!(bounds(&monitors, &Rect::default()), Rect::new(-50, 0, 150, 180));
     }
 
     #[test]
@@ -78,9 +93,7 @@ mod tests {
 
     #[test]
     fn struts_only_shrink_the_monitors_on_the_edge_of_the_bounds() {
-        let left = Rect::new(0, 0, 1000, 800);
-        let right = Rect::new(1000, 0, 1000, 800);
-        let bounds = left.union(&right);
+        let monitors = [Rect::new(0, 0, 1000, 800), Rect::new(1000, 0, 1000, 800)];
         let strut = Strut {
             left: 50,
             right: 0,
@@ -88,8 +101,8 @@ mod tests {
             bottom: 0,
         };
 
-        assert_eq!(left.work_area(&bounds, &strut), Rect::new(50, 30, 950, 770));
-        assert_eq!(right.work_area(&bounds, &strut), Rect::new(1000, 30, 1000, 770));
+        let areas = work_areas(&monitors, &bounds(&monitors, &Rect::default()), &strut);
+        assert_eq!(areas, vec![Rect::new(50, 30, 950, 770), Rect::new(1000, 30, 1000, 770)]);
     }
 
     #[test]
@@ -101,8 +114,55 @@ mod tests {
             top: 500,
             bottom: 500,
         };
-        let area = monitor.work_area(&monitor, &strut);
-        assert_eq!((area.w, area.h), (0, 0));
+        let areas = work_areas(&[monitor], &monitor, &strut);
+        assert_eq!((areas[0].w, areas[0].h), (0, 0));
+    }
+
+    #[test]
+    fn struts_come_from_the_first_four_values_and_need_at_least_four() {
+        let partial = [10, 20, 30, 40, 0, 0, 0, 0, 0, 0, 0, 0];
+        let strut = Strut::parse(&partial).unwrap();
+        assert_eq!((strut.left, strut.right, strut.top, strut.bottom), (10, 20, 30, 40));
+        assert!(Strut::parse(&[1, 2, 3]).is_none());
+        assert!(Strut::parse(&[]).is_none());
+    }
+
+    #[test]
+    fn merged_struts_keep_the_largest_side_of_each_panel() {
+        let mut strut = Strut {
+            left: 10,
+            right: 0,
+            top: 40,
+            bottom: 0,
+        };
+        strut.merge(&Strut {
+            left: 5,
+            right: 30,
+            top: 20,
+            bottom: 0,
+        });
+        assert_eq!((strut.left, strut.right, strut.top, strut.bottom), (10, 30, 40, 0));
+    }
+
+    #[test]
+    fn the_bounds_cover_every_monitor_and_fall_back_when_there_are_none() {
+        let screen = Rect::new(0, 0, 640, 480);
+        assert_eq!(bounds(&[], &screen), screen);
+        let monitors = [Rect::new(0, 0, 1000, 800), Rect::new(1000, 100, 500, 600)];
+        assert_eq!(bounds(&monitors, &screen), Rect::new(0, 0, 1500, 800));
+    }
+
+    #[test]
+    fn work_areas_follow_the_monitors_in_order() {
+        let monitors = [Rect::new(0, 0, 1000, 800), Rect::new(1000, 0, 1000, 800)];
+        let strut = Strut {
+            left: 0,
+            right: 40,
+            top: 0,
+            bottom: 24,
+        };
+        let areas = work_areas(&monitors, &bounds(&monitors, &Rect::default()), &strut);
+        assert_eq!(areas, vec![Rect::new(0, 0, 1000, 776), Rect::new(1000, 0, 960, 776)]);
     }
 
     #[test]

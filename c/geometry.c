@@ -32,7 +32,7 @@ int sl_rect_contains(const struct sl_rect *rect, int32_t x, int32_t y)
 	return x >= rect->x && y >= rect->y && x < right_of(rect) && y < bottom_of(rect);
 }
 
-struct sl_rect sl_rect_union(const struct sl_rect *a, const struct sl_rect *b)
+static struct sl_rect sl_rect_union(const struct sl_rect *a, const struct sl_rect *b)
 {
 	struct sl_rect result;
 	int64_t x = min64(a->x, b->x);
@@ -45,7 +45,7 @@ struct sl_rect sl_rect_union(const struct sl_rect *a, const struct sl_rect *b)
 	return result;
 }
 
-int64_t sl_rect_overlap_area(const struct sl_rect *a, const struct sl_rect *b)
+static int64_t sl_rect_overlap_area(const struct sl_rect *a, const struct sl_rect *b)
 {
 	int64_t width = min64(right_of(a), right_of(b)) - max64(a->x, b->x);
 	int64_t height = min64(bottom_of(a), bottom_of(b)) - max64(a->y, b->y);
@@ -55,7 +55,7 @@ int64_t sl_rect_overlap_area(const struct sl_rect *a, const struct sl_rect *b)
 	return width * height;
 }
 
-struct sl_rect sl_rect_work_area(const struct sl_rect *monitor, const struct sl_rect *bounds,
+static struct sl_rect sl_rect_work_area(const struct sl_rect *monitor, const struct sl_rect *bounds,
 				 const struct sl_strut *strut)
 {
 	struct sl_rect area = *monitor;
@@ -90,4 +90,50 @@ size_t sl_monitor_index(const struct sl_rect *monitors, size_t count, const stru
 		}
 	}
 	return best;
+}
+
+int sl_strut_parse(const uint32_t *values, size_t count, struct sl_strut *strut)
+{
+	if (count < 4)
+		return 0;
+	strut->left = values[0];
+	strut->right = values[1];
+	strut->top = values[2];
+	strut->bottom = values[3];
+	return 1;
+}
+
+static uint32_t max32(uint32_t a, uint32_t b)
+{
+	return a > b ? a : b;
+}
+
+void sl_strut_merge(struct sl_strut *into, const struct sl_strut *other)
+{
+	into->left = max32(into->left, other->left);
+	into->right = max32(into->right, other->right);
+	into->top = max32(into->top, other->top);
+	into->bottom = max32(into->bottom, other->bottom);
+}
+
+struct sl_rect sl_bounds(const struct sl_rect *monitors, size_t count, const struct sl_rect *fallback)
+{
+	struct sl_rect bounds;
+	size_t index;
+
+	if (count == 0)
+		return *fallback;
+	bounds = monitors[0];
+	for (index = 1; index < count; index++)
+		bounds = sl_rect_union(&bounds, &monitors[index]);
+	return bounds;
+}
+
+void sl_work_areas(const struct sl_rect *monitors, size_t count, const struct sl_rect *bounds,
+		   const struct sl_strut *strut, struct sl_rect *areas)
+{
+	size_t index;
+
+	for (index = 0; index < count; index++)
+		areas[index] = sl_rect_work_area(&monitors[index], bounds, strut);
 }

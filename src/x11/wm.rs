@@ -531,11 +531,7 @@ impl Wm {
     }
 
     fn bounds(&self) -> Rect {
-        self.monitors
-            .iter()
-            .copied()
-            .reduce(|bounds, monitor| bounds.union(&monitor))
-            .unwrap_or(self.screen)
+        super::geometry::bounds(&self.monitors, &self.screen)
     }
 
     fn read_strut(&self, window: Window) -> Strut {
@@ -548,13 +544,8 @@ impl Wm {
                 .and_then(|cookie| cookie.reply().ok())
                 .and_then(|reply| reply.value32().map(|values| values.collect()))
                 .unwrap_or_default();
-            if values.len() >= 4 {
-                return Strut {
-                    left: values[0],
-                    right: values[1],
-                    top: values[2],
-                    bottom: values[3],
-                };
+            if let Some(strut) = Strut::parse(&values) {
+                return strut;
             }
         }
         Strut::default()
@@ -563,19 +554,11 @@ impl Wm {
     fn update_work_areas(&mut self) -> Result<()> {
         let mut strut = Strut::default();
         for dock in &self.docks {
-            let dock_strut = self.read_strut(*dock);
-            strut.left = strut.left.max(dock_strut.left);
-            strut.right = strut.right.max(dock_strut.right);
-            strut.top = strut.top.max(dock_strut.top);
-            strut.bottom = strut.bottom.max(dock_strut.bottom);
+            strut.merge(&self.read_strut(*dock));
         }
 
         let bounds = self.bounds();
-        self.work_areas = self
-            .monitors
-            .iter()
-            .map(|monitor| monitor.work_area(&bounds, &strut))
-            .collect();
+        self.work_areas = super::geometry::work_areas(&self.monitors, &bounds, &strut);
 
         let area = self.work_areas.first().copied().unwrap_or(self.screen);
         self.conn.change_property32(
