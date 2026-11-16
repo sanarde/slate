@@ -6,6 +6,7 @@ fn main() {
     cc::Build::new()
         .include("c")
         .file("c/geometry.c")
+        .file("c/keys.c")
         .std("c11")
         .warnings(true)
         .flag("-Wpedantic")

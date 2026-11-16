@@ -485,8 +485,9 @@ impl Wm {
     }
 
     fn grab_keys(&mut self) -> Result<()> {
+        let keymap = keys::Keymap::fetch(&self.conn)?;
         for binding in self.settings.bindings.clone() {
-            let Some(keycode) = keys::keycode_for(&self.conn, binding.keysym)? else {
+            let Some(keycode) = keymap.keycode_for(binding.keysym) else {
                 tracing::warn!(keysym = binding.keysym, "key is not present in the keyboard mapping");
                 continue;
             };
