@@ -340,7 +340,7 @@ slatectl move-to-workspace ID 4
 slatectl subscribe                  # JSON lines until interrupted
 ```
 
-`state`, `windows`, `workspaces`, `outputs`, `version`, `focus ID`, `close ID`, `minimize ID`, `restore ID`, `move-to-workspace ID N`, `layout N NAME` and `action ACTION` are the commands. Workspaces are numbered from 1. `subscribe` prints the events `window-open`, `window-close`, `window-title`, `focus`, `workspace` and `layout`. Window ids are the X11 window ids in the X11 backend.
+`state`, `windows`, `workspaces`, `outputs`, `stats`, `stats-reset`, `version`, `focus ID`, `close ID`, `minimize ID`, `restore ID`, `move-to-workspace ID N`, `layout N NAME` and `action ACTION` are the commands. Workspaces are numbered from 1. `subscribe` prints the events `window-open`, `window-close`, `window-title`, `focus`, `workspace` and `layout`. Window ids are the X11 window ids in the X11 backend. `stats` reports how long Slate takes for what it does, in microseconds: the time to build and submit a frame on Wayland, the time to handle an event on X11. It gives the count, the average, the maximum, the last value and how many took longer than 4, 8 and 16 milliseconds. `stats-reset` starts the count again. Use them to see whether an effect such as blur is too expensive on a given machine.
 
 ```
 slatectl subscribe | while read -r line; do case "$line" in *'"event":"workspace"'*) pkill -SIGRTMIN+8 waybar ;; esac; done
