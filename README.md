@@ -113,7 +113,7 @@ bind = Mod+b=exec firefox
 
 ### With SanarDE
 
-The default theme `material-you` follows Material Design 3: tonal surface containers for the titlebar, circular icon buttons with state layers (8 percent on hover, 12 percent when pressed), elevation 3 for the focused window and 1 for the others, and the emphasized motion curves with a short accelerating close. It uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
+The default theme `material-you` follows Material Design 3 as the Material guidance describes it: the titlebar is a small top app bar, flat `surface` when the window is not focused and `surface_container` when it is, with the title in Title Small medium on the left and standard 40 pixel icon buttons with state layers (8 percent on hover, 10 percent when pressed). Depth comes from the tone first and the shadow is the one of elevation level 3 for the focused window and level 1 for the others. Corners are 20 (large-increased), sizes follow the 8dp grid, and motion uses the emphasized curves with a short accelerating close. It uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
 
 ### File format
 
