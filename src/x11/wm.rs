@@ -31,14 +31,13 @@ use crate::bindings::{Action, Binding};
 use crate::font::Fonts;
 use crate::ipc::Ipc;
 use crate::layout::WorkspaceLayout;
-use crate::config::{ButtonKind, ModKeySetting, Settings};
+use crate::config::{ButtonKind, MAX_WORKSPACES, ModKeySetting, Settings};
 use crate::source::ConfigSource;
 use crate::rules::{self, Applied, Position};
 use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
 const ICONIC_STATE: u32 = 3;
-pub(super) const WORKSPACE_LIMIT: usize = 9;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -182,7 +181,7 @@ impl Wm {
             focused: None,
             minimize_order: Vec::new(),
             tile_order: Vec::new(),
-            workspace_layouts: vec![vec![WorkspaceLayout::new(&settings.tiling); WORKSPACE_LIMIT]],
+            workspace_layouts: vec![vec![WorkspaceLayout::new(&settings.tiling); MAX_WORKSPACES]],
             monitor_workspaces: vec![0],
             active_monitor: 0,
             mod_mask: mod_mask_of(settings.mod_key),
@@ -260,6 +259,7 @@ impl Wm {
                 Err(error) => return Err(error.into()),
             }
             self.serve_ipc();
+            spawn::reap();
             self.reload_settings()?;
             self.refresh_monitors()?;
         }
@@ -524,7 +524,7 @@ impl Wm {
         self.monitor_workspaces.resize(count, 0);
         let tiling = self.settings.tiling.clone();
         self.workspace_layouts
-            .resize_with(count, || vec![WorkspaceLayout::new(&tiling); WORKSPACE_LIMIT]);
+            .resize_with(count, || vec![WorkspaceLayout::new(&tiling); MAX_WORKSPACES]);
         self.active_monitor = self.active_monitor.min(count - 1);
         self.update_work_areas()
     }
@@ -1007,6 +1007,7 @@ impl Wm {
     }
 
     fn restart(&mut self) -> Result<()> {
+        std::fs::File::open("/proc/self/exe").map_err(|error| format!("cannot restart: {error}"))?;
         let clients: Vec<(Window, Option<Window>, Rect)> = self
             .clients
             .iter()
@@ -1021,12 +1022,13 @@ impl Wm {
         }
         self.conn.flush()?;
 
-        let executable = std::env::current_exe()?;
-        let error = std::os::unix::process::CommandExt::exec(
-            std::process::Command::new(executable)
-                .args(std::env::args_os().skip(1))
-                .env("SLATE_RESTARTED", "1"),
-        );
+        use std::os::unix::process::CommandExt;
+        let mut command = std::process::Command::new("/proc/self/exe");
+        command
+            .arg0(std::env::args_os().next().unwrap_or_default())
+            .args(std::env::args_os().skip(1))
+            .env(crate::session::RESTART_VARIABLE, "1");
+        let error = command.exec();
         Err(error.into())
     }
 
@@ -1177,6 +1179,10 @@ impl Wm {
         if self.pressed.as_ref().is_some_and(|(pressed, _)| *pressed == window) {
             self.pressed = None;
         }
+        if self.last_title_click.as_ref().is_some_and(|(clicked, _)| *clicked == window) {
+            self.last_title_click = None;
+        }
+        self.minimize_order.retain(|minimized| *minimized != window);
         self.forget_tiled(window);
         if self.drag.as_ref().is_some_and(|drag| drag.window == window) {
             self.drag = None;

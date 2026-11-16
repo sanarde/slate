@@ -52,6 +52,7 @@ enum Mode {
 fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt().with_writer(std::io::stderr).init();
 
+    session::note_restart();
     let mut args = std::env::args().skip(1).peekable();
     let mut backend = None;
     let mut options = Options::default();

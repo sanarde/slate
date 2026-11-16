@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::bindings::split_command;
 use crate::config::Settings;
@@ -128,9 +129,16 @@ pub fn autostart_commands(directories: &[PathBuf], desktops: &[String]) -> Vec<V
     commands
 }
 
+static RESTARTED: AtomicBool = AtomicBool::new(false);
+
+pub const RESTART_VARIABLE: &str = "SLATE_RESTARTED";
+
+pub fn note_restart() {
+    RESTARTED.store(std::env::var_os(RESTART_VARIABLE).is_some(), Ordering::Relaxed);
+}
+
 pub fn start(settings: &Settings, envs: &[(&'static str, OsString)], import_environment: bool) {
-    if std::env::var_os("SLATE_RESTARTED").is_some() {
-        unsafe { std::env::remove_var("SLATE_RESTARTED") };
+    if RESTARTED.load(Ordering::Relaxed) {
         return;
     }
 

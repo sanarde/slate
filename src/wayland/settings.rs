@@ -47,6 +47,7 @@ pub fn watch(event_loop: &EventLoop<'static, Slate>, state: &mut Slate) -> Resul
     }
 
     handle.insert_source(Timer::from_duration(POLL_INTERVAL), |_, _, state| {
+        crate::spawn::reap();
         state.reload_settings();
         TimeoutAction::ToDuration(POLL_INTERVAL)
     })?;
@@ -66,7 +67,7 @@ impl Slate {
         tracing::info!("settings reloaded");
         self.mod_key = resolve_mod_key(new.mod_key, self.default_mod_key);
 
-        let keyboard = self.seat.get_keyboard().unwrap();
+        let keyboard = self.keyboard();
         if old.xkb != new.xkb
             && let Err(error) = keyboard.set_xkb_config(self, xkb_config(&new.xkb))
         {
