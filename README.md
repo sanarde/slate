@@ -113,7 +113,7 @@ bind = Mod+b=exec firefox
 
 ### With SanarDE
 
-The default theme `material-you` follows Material Design 3: the titlebar is the top app bar of the window, the same `surface` as the window itself with no bar and no border between them, a small medium title on the left and icon buttons that only show a state layer (8 percent on hover, 10 percent when pressed). A focused window is told apart by its shadow, elevation level 3 against level 1, and by the title color. Corners are 28 (extra-large), sizes follow the 8dp grid, and motion uses the emphasized curves with a short accelerating close. Applications that draw their own content with the same Seurat roles, such as those that use SanarStyle, then look like one surface with their titlebar. It uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
+The default theme `material-you` follows Material Design 3: the titlebar is the top app bar of the window, the same `surface` as the window itself with no bar and no border between them, a small medium title on the left and icon buttons that only show a state layer (8 percent on hover, 10 percent when pressed). A focused window is told apart by its shadow, elevation level 3 against level 1, and by the title color. Corners are 28 (extra-large), sizes follow the 8dp grid, and motion uses the emphasized curves with a short accelerating close. The theme draws the buttons with the Material Symbols Rounded font when it is installed and sets `decoration-mode = auto`, so applications that draw their own titlebar keep it and the others get this one. Applications that use the same Seurat roles, such as those with SanarStyle, then look like one surface with their titlebar. It uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
 
 ### File format
 
@@ -256,6 +256,7 @@ Both backends draw titlebars and borders themselves. On Wayland this is done for
 | `button-layout` | `:minimize,maximize,close` | `LEFT:RIGHT` lists of `close`, `maximize` and `minimize`. |
 | `button-size`, `button-spacing`, `button-margin` | 18, 6, 8 | Pixels. |
 | `button-shape` | `circle` | `circle`, `rounded` or `square`. |
+| `button-icon-font` | empty | Icon font for the buttons, a fontconfig family or a file path, for example `Material Symbols Rounded` as shipped with SanarStyle. A font that is not installed falls back to the drawn icons. |
 | `button-color`, `button-hover-color`, `button-pressed-color`, `button-close-hover-color` | `#00000000`, `#ffffff33`, `#ffffff4d`, `#e5484d` | Button backgrounds. The pressed color applies while the mouse button is held, the close button keeps its hover color. |
 | `button-icon-color-focused`, `button-icon-color-unfocused` | `#ffffff`, `#cac4d0` | Icon colors. |
 | `titlebar-double-click`, `titlebar-middle-click`, `titlebar-right-click` | `maximize`, `none`, `none` | `none`, `maximize`, `minimize`, `fullscreen` or `close`. |
