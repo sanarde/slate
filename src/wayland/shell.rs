@@ -190,6 +190,7 @@ pub fn unmap_window(state: &mut Slate, window: &Window) {
     state.pending_windows.retain(|pending| pending != window);
     state.parked.retain(|(parked, _)| parked != window);
     state.minimized.retain(|(minimized, _)| minimized != window);
+    super::closing::promote(state, window);
     state.space.unmap_elem(window);
     grabs::forget_window(state, window);
     tiling::forget(state, window);
@@ -486,7 +487,8 @@ pub fn focused_window(state: &Slate) -> Option<Window> {
         .cloned()
 }
 
-pub fn close_window(window: &Window) {
+pub fn close_window(state: &mut Slate, window: &Window) {
+    super::closing::request(state, window);
     if let Some(toplevel) = window.toplevel() {
         toplevel.send_close();
     } else if let Some(surface) = window.x11_surface() {

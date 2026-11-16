@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Instant;
 
+use smithay::backend::renderer::gles::GlesTexProgram;
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{PopupManager, Space, Window, layer_map_for_output};
 use smithay::input::pointer::CursorImageStatus;
@@ -79,9 +80,14 @@ pub struct Slate {
     pub next_window_id: u64,
     pub last_focus: Option<u64>,
     pub swipe: Option<(f64, f64)>,
+    pub closing: super::closing::Closing,
+    pub switcher: Option<super::switcher::Switcher>,
     pub ipc: Option<Ipc>,
     pub foreign_toplevel: ForeignToplevelState,
     pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
+    pub blur_program: RefCell<Option<Option<GlesTexProgram>>>,
+    pub clip_program: RefCell<Option<Option<GlesTexProgram>>>,
+    pub clip_styles: RefCell<HashMap<(u64, String), u64>>,
     pub workspace_layouts: Vec<WorkspaceLayout>,
     pub outputs: Vec<OutputRecord>,
     pub output_management: OutputManagementState,
@@ -184,9 +190,14 @@ impl Slate {
             next_window_id: 0,
             last_focus: None,
             swipe: None,
+            closing: Default::default(),
+            switcher: None,
             ipc: None,
             foreign_toplevel: ForeignToplevelState::new(&display_handle),
             shadows: RefCell::new(HashMap::new()),
+            blur_program: RefCell::new(None),
+            clip_program: RefCell::new(None),
+            clip_styles: RefCell::new(HashMap::new()),
             workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); 9],
             outputs: Vec::new(),
             output_management: OutputManagementState::new(&display_handle),

@@ -248,7 +248,7 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, HandleData> for Slate {
             zwlr_foreign_toplevel_handle_v1::Request::SetMinimized => shell::minimize_window(state, window),
             zwlr_foreign_toplevel_handle_v1::Request::UnsetMinimized => shell::restore_window(state, window),
             zwlr_foreign_toplevel_handle_v1::Request::Activate { .. } => shell::activate_window(state, window),
-            zwlr_foreign_toplevel_handle_v1::Request::Close => shell::close_window(window),
+            zwlr_foreign_toplevel_handle_v1::Request::Close => shell::close_window(state, window),
             zwlr_foreign_toplevel_handle_v1::Request::SetFullscreen { output: _ } => {
                 shell::set_fullscreen(state, window, true);
             }

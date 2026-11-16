@@ -18,6 +18,7 @@ use super::decoration;
 use super::focus::KeyFocus;
 use super::grabs::{self, Edges};
 use super::shell;
+use super::switcher;
 use super::state::{ModKey, Slate};
 use super::tiling;
 use super::udev;
@@ -31,6 +32,29 @@ const SCROLL_STEP: f64 = 15.0;
 enum Pressed {
     SwitchVt(i32),
     Bound(Action),
+    Switcher(SwitcherKey),
+}
+
+enum SwitcherKey {
+    Step(bool),
+    Move(i32, i32),
+    Commit,
+    Cancel,
+    Ignore,
+}
+
+fn switcher_key(keysym: Keysym, modifiers: &ModifiersState) -> SwitcherKey {
+    match keysym {
+        Keysym::Tab => SwitcherKey::Step(!modifiers.shift),
+        Keysym::ISO_Left_Tab => SwitcherKey::Step(false),
+        Keysym::Escape => SwitcherKey::Cancel,
+        Keysym::Return | Keysym::KP_Enter => SwitcherKey::Commit,
+        Keysym::Left => SwitcherKey::Move(-1, 0),
+        Keysym::Right => SwitcherKey::Move(1, 0),
+        Keysym::Up => SwitcherKey::Move(0, -1),
+        Keysym::Down => SwitcherKey::Move(0, 1),
+        _ => SwitcherKey::Ignore,
+    }
 }
 
 pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
@@ -262,6 +286,16 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
     let keyboard = state.seat.get_keyboard().unwrap();
 
     let pressed = keyboard.input(state, event.key_code(), key_state, serial, time, |state, modifiers, handle| {
+        if switcher::active(state) {
+            if key_state == KeyState::Released {
+                return if switcher::released(state, modifiers) {
+                    FilterResult::Intercept(Pressed::Switcher(SwitcherKey::Commit))
+                } else {
+                    FilterResult::Forward
+                };
+            }
+            return FilterResult::Intercept(Pressed::Switcher(switcher_key(handle.modified_sym(), modifiers)));
+        }
         if key_state != KeyState::Pressed {
             return FilterResult::Forward;
         }
@@ -287,6 +321,13 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
     match pressed {
         Some(Pressed::SwitchVt(vt)) => udev::change_vt(state, vt),
         Some(Pressed::Bound(action)) => run(state, action),
+        Some(Pressed::Switcher(key)) => match key {
+            SwitcherKey::Step(forward) => switcher::step(state, forward),
+            SwitcherKey::Move(dx, dy) => switcher::navigate(state, dx, dy),
+            SwitcherKey::Commit => switcher::commit(state),
+            SwitcherKey::Cancel => switcher::cancel(state),
+            SwitcherKey::Ignore => {}
+        },
         None => {}
     }
 }
@@ -297,7 +338,7 @@ pub(super) fn run(state: &mut Slate, action: Action) {
         Action::Exec(command) => state.spawn(&command),
         Action::Close => {
             if let Some(window) = shell::focused_window(state) {
-                shell::close_window(&window);
+                shell::close_window(state, &window);
             }
         }
         Action::Maximize => {
@@ -325,6 +366,13 @@ pub(super) fn run(state: &mut Slate, action: Action) {
                 super::monitors::move_to_monitor(state, &window, direction);
             }
         }
+        Action::Switcher | Action::SwitcherPrevious => {
+            let modifiers = state.seat.get_keyboard().unwrap().modifier_state();
+            switcher::start_cycle(state, action == Action::Switcher, &modifiers);
+        }
+        Action::SwitcherCommit => switcher::commit(state),
+        Action::SwitcherCancel => switcher::cancel(state),
+        Action::Overview => switcher::toggle_overview(state),
         Action::Scratchpad(name) => shell::toggle_scratchpad(state, &name),
         Action::Reload => state.reload_settings(),
         Action::Restart => tracing::warn!("restart is only supported by the X11 backend"),
@@ -386,6 +434,12 @@ fn pointer_motion<B: InputBackend>(state: &mut Slate, event: B::PointerMotionEve
     let pointer = state.seat.get_pointer().unwrap();
     let location = clamp_to_outputs(state, pointer.current_location() + event.delta());
     let serial = SERIAL_COUNTER.next_serial();
+    if switcher::active(state) {
+        switcher::hover(state, location);
+        pointer.motion(state, None, &MotionEvent { location, serial, time: event.time_msec() });
+        pointer.frame(state);
+        return;
+    }
     if !pointer.is_grabbed() {
         decoration::update_hover(state, location);
     }
@@ -417,6 +471,12 @@ fn pointer_motion_absolute<B: InputBackend>(state: &mut Slate, event: B::Pointer
     let location = event.position_transformed(bounds.size) + bounds.loc.to_f64();
     let serial = SERIAL_COUNTER.next_serial();
     let pointer = state.seat.get_pointer().unwrap();
+    if switcher::active(state) {
+        switcher::hover(state, location);
+        pointer.motion(state, None, &MotionEvent { location, serial, time: event.time_msec() });
+        pointer.frame(state);
+        return;
+    }
     if !pointer.is_grabbed() {
         decoration::update_hover(state, location);
     }
@@ -440,6 +500,12 @@ fn pointer_button<B: InputBackend>(state: &mut Slate, event: B::PointerButtonEve
     let serial = SERIAL_COUNTER.next_serial();
     let button = event.button_code();
     let button_state = event.state();
+    if switcher::active(state) {
+        if button_state == ButtonState::Pressed {
+            switcher::click(state, pointer.current_location());
+        }
+        return;
+    }
 
     if button_state == ButtonState::Released {
         decoration::release(state);
@@ -492,6 +558,9 @@ fn pointer_button<B: InputBackend>(state: &mut Slate, event: B::PointerButtonEve
 }
 
 fn pointer_axis<B: InputBackend>(state: &mut Slate, event: B::PointerAxisEvent) {
+    if switcher::active(state) {
+        return;
+    }
     let source = event.source();
     let mut frame = AxisFrame::new(event.time_msec()).source(source);
 

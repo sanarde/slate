@@ -1583,6 +1583,11 @@ impl Wm {
                     self.move_to_monitor(window, direction)?;
                 }
             }
+            Action::Switcher => self.cycle_focus(true)?,
+            Action::SwitcherPrevious => self.cycle_focus(false)?,
+            Action::SwitcherCommit | Action::SwitcherCancel | Action::Overview => {
+                tracing::debug!("the switcher and the overview are Wayland only");
+            }
             Action::Reload => self.reload_settings()?,
             Action::Restart => self.restart()?,
             Action::Scratchpad(name) => self.toggle_scratchpad(&name)?,

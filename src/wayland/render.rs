@@ -3,9 +3,10 @@
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement, RescaleRenderElement};
-use smithay::backend::renderer::element::{AsRenderElements, Kind};
+use smithay::backend::renderer::element::{AsRenderElements, Element, Kind};
 use smithay::backend::renderer::element::surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree};
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::desktop::{LayerSurface, layer_map_for_output};
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::output::Output;
@@ -15,6 +16,7 @@ use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::compositor::with_states;
 
 use super::animation::{self, Anchor, Effect};
+use super::clip::{self, ClippedSurface};
 use super::decoration;
 use super::shadow;
 use super::tiling;
@@ -26,11 +28,15 @@ pub const CLEAR_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
 render_elements! {
     pub OutputElement<=GlesRenderer>;
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+    Clipped=ClippedSurface,
+    AnimClipped=RelocateRenderElement<RescaleRenderElement<ClippedSurface>>,
     Solid=SolidColorRenderElement,
     AnimSurface=RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<GlesRenderer>>>,
     AnimSolid=RelocateRenderElement<RescaleRenderElement<SolidColorRenderElement>>,
     AnimMemory=RelocateRenderElement<RescaleRenderElement<MemoryRenderBufferRenderElement<GlesRenderer>>>,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Texture=TextureRenderElement<GlesTexture>,
+    AnimTexture=RelocateRenderElement<RescaleRenderElement<TextureRenderElement<GlesTexture>>>,
 }
 
 pub fn output_elements(
@@ -40,6 +46,7 @@ pub fn output_elements(
     with_cursor: bool,
 ) -> Vec<OutputElement> {
     animation::prune(state);
+    super::closing::capture(state, renderer, output);
     let mut elements = Vec::new();
 
     if let Some(output_geometry) = state.space.output_geometry(output) {
@@ -62,6 +69,8 @@ pub fn output_elements(
         return elements;
     }
 
+    super::switcher::elements(state, renderer, output, &mut elements);
+    super::closing::elements(state, output, &mut elements);
     scene_elements(state, renderer, output, &mut elements);
     elements
 }
@@ -102,6 +111,7 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
 
     layer_elements(renderer, output, &upper, scale, elements);
 
+    let mut marks: Vec<(usize, Rectangle<i32, Logical>)> = Vec::new();
     for window in state.space.elements().rev() {
         let Some(bounds) = state.space.element_bbox(window) else {
             continue;
@@ -125,54 +135,126 @@ fn scene_elements(state: &Slate, renderer: &mut GlesRenderer, output: &Output, e
         let applied = shell::rule_of(window);
         let alpha = effect.as_ref().map_or(1.0, |effect| effect.alpha) * applied.opacity.unwrap_or(1.0);
 
-        let mut group: Vec<OutputElement> = Vec::new();
-        if let Some(location) = state.space.element_location(window) {
-            let render_location = location - window.geometry().loc - output_geometry.loc;
-            let surfaces: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = window.render_elements(
-                renderer,
-                render_location.to_physical_precise_round(scale),
-                Scale::from(scale),
-                alpha,
-            );
-            group.extend(surfaces.into_iter().map(OutputElement::Surface));
-        }
         let is_focused = focused.as_ref() == Some(window);
-        group.extend(decoration::elements(
-            state,
-            renderer,
-            window,
-            output_geometry.loc,
-            scale,
-            is_focused,
-            alpha,
-        ));
+        let group = window_group(state, renderer, output, window, output_geometry.loc, scale, alpha, frame, is_focused);
 
-        let (maximized, fullscreen) = shell::flags(window);
-        let shadow_wanted = !applied.no_shadow
-            && decoration::framed(state, window)
-            && !maximized
-            && !fullscreen
-            && (state.settings.effects.shadow_tiled || !tiling::is_tiled(window));
-        if shadow_wanted && let Some(frame) = frame {
-            group.extend(shadow::elements(
-                state,
-                renderer,
-                frame,
-                state.settings.decoration.corner_radius as i32,
-                is_focused,
-                output_geometry.loc,
-                scale,
-                alpha,
-            ));
-        }
-
+        let blurred = applied.blur && effect.is_none() && !fullscreen_or_hidden(window);
         match (effect, frame) {
             (Some(effect), Some(frame)) => elements.extend(wrap(group, &effect, frame, output_geometry.loc, scale)),
             _ => elements.extend(group),
         }
+        if blurred && let Some(content) = content {
+            marks.push((elements.len(), content));
+        }
     }
 
     layer_elements(renderer, output, &lower, scale, elements);
+
+    for (index, rect) in marks.into_iter().rev() {
+        if let Some(blur) = super::blur::element(state, renderer, output, &elements[index..], rect) {
+            elements.insert(index, blur);
+        }
+    }
+}
+
+fn fullscreen_or_hidden(window: &smithay::desktop::Window) -> bool {
+    shell::flags(window).1
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn window_group(
+    state: &Slate,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    window: &smithay::desktop::Window,
+    origin: Point<i32, Logical>,
+    scale: f64,
+    alpha: f32,
+    frame: Option<Rectangle<i32, Logical>>,
+    is_focused: bool,
+) -> Vec<OutputElement> {
+    let mut group: Vec<OutputElement> = Vec::new();
+    if let Some(location) = state.space.element_location(window) {
+        let render_location = location - window.geometry().loc - origin;
+        let surfaces: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = window.render_elements(
+            renderer,
+            render_location.to_physical_precise_round(scale),
+            Scale::from(scale),
+            alpha,
+        );
+        group.extend(content_elements(state, renderer, output, window, surfaces, is_focused, scale));
+    }
+    group.extend(decoration::elements(state, renderer, window, origin, scale, is_focused, alpha));
+
+    let (maximized, fullscreen) = shell::flags(window);
+    let shadow_wanted = !shell::rule_of(window).no_shadow
+        && decoration::framed(state, window)
+        && !maximized
+        && !fullscreen
+        && (state.settings.effects.shadow_tiled || !tiling::is_tiled(window));
+    if shadow_wanted && let Some(frame) = frame {
+        let radius = state.settings.decoration.corner_radius as i32;
+        group.extend(shadow::elements(
+            state,
+            renderer,
+            frame,
+            radius,
+            if decoration::rounding(state, maximized).is_some() { radius } else { 0 },
+            is_focused,
+            origin,
+            scale,
+            alpha,
+        ));
+    }
+    group
+}
+
+fn content_elements(
+    state: &Slate,
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    window: &smithay::desktop::Window,
+    surfaces: Vec<WaylandSurfaceRenderElement<GlesRenderer>>,
+    focused: bool,
+    scale: f64,
+) -> Vec<OutputElement> {
+    let effects = &state.settings.effects;
+    let (maximized, fullscreen) = shell::flags(window);
+    let insets = decoration::insets(state, window);
+    let rounding = decoration::rounding(state, maximized).filter(|_| !fullscreen && decoration::framed(state, window));
+    let rounded = rounding.is_some();
+    let physical = |value: f32| value * scale as f32;
+    let radii = match rounding {
+        Some((_, inner)) => {
+            let top = if insets.top > 0 { 0.0 } else { inner };
+            [physical(top), physical(top), physical(inner), physical(inner)]
+        }
+        None => [0.0; 4],
+    };
+    let dim = if focused { 0.0 } else { effects.dim_inactive };
+
+    let program = if rounded || dim > 0.0 { clip::program(state, renderer) } else { None };
+    let Some(program) = program else {
+        return surfaces.into_iter().map(OutputElement::Surface).collect();
+    };
+
+    let style = radii.iter().fold(u64::from(dim.to_bits()), |hash, radius| hash.rotate_left(7) ^ u64::from(radius.to_bits()));
+    let key = (shell::window_id(window), output.name());
+    let changed = state.clip_styles.borrow_mut().insert(key, style) != Some(style);
+
+    let expected: smithay::utils::Size<i32, Physical> = window.geometry().size.to_physical_precise_round(scale);
+    surfaces
+        .into_iter()
+        .map(|element| {
+            let size = Element::geometry(&element, Scale::from(scale)).size;
+            let main = (size.w - expected.w).abs() <= 1 && (size.h - expected.h).abs() <= 1;
+            if main {
+                OutputElement::Clipped(ClippedSurface::new(element, program.clone(), radii, dim, changed))
+            } else {
+                OutputElement::Surface(element)
+            }
+        })
+        .collect()
 }
 
 fn cursor_elements(
@@ -224,7 +306,7 @@ fn cursor_elements(
     }
 }
 
-fn wrap(
+pub(super) fn wrap(
     group: Vec<OutputElement>,
     effect: &Effect,
     frame: Rectangle<i32, Logical>,
@@ -252,6 +334,11 @@ fn wrap(
                 Relocate::Relative,
             )),
             OutputElement::Solid(element) => OutputElement::AnimSolid(RelocateRenderElement::from_element(
+                RescaleRenderElement::from_element(element, anchor, factor),
+                offset,
+                Relocate::Relative,
+            )),
+            OutputElement::Clipped(element) => OutputElement::AnimClipped(RelocateRenderElement::from_element(
                 RescaleRenderElement::from_element(element, anchor, factor),
                 offset,
                 Relocate::Relative,

@@ -59,8 +59,52 @@ struct Cache {
     key: Key,
     titlebar: Option<MemoryRenderBuffer>,
     borders: Vec<(Rectangle<i32, Logical>, SolidColorBuffer)>,
+    ring: Option<(MemoryRenderBuffer, Rectangle<i32, Logical>)>,
     titlebar_rect: Rectangle<i32, Logical>,
     content_loc: Point<i32, Logical>,
+}
+
+pub fn rounding(state: &Slate, maximized: bool) -> Option<(f32, f32)> {
+    let radius = state.settings.decoration.corner_radius as f32;
+    let border = state.settings.border_width as f32;
+    if !state.settings.effects.round_content || maximized || radius <= 0.0 {
+        return None;
+    }
+    if border <= 0.0 {
+        Some((radius, radius))
+    } else if radius > border {
+        Some((radius, radius - border))
+    } else {
+        None
+    }
+}
+
+fn smooth_box(x: f32, y: f32, center: (f32, f32), half: (f32, f32), radius: f32) -> f32 {
+    let qx = (x - center.0).abs() - (half.0 - radius);
+    let qy = (y - center.1).abs() - (half.1 - radius);
+    let distance = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - radius;
+    (0.5 - distance).clamp(0.0, 1.0)
+}
+
+fn ring_pixels(width: usize, height: usize, outer: f32, border: f32, color: Color) -> Vec<u8> {
+    let (w, h) = (width as f32, height as f32);
+    let inner = (outer - border).max(0.0);
+    let mut bytes = Vec::with_capacity(width * height * 4);
+    for row in 0..height {
+        for column in 0..width {
+            let (x, y) = (column as f32 + 0.5, row as f32 + 0.5);
+            let outside = smooth_box(x, y, (w / 2.0, 0.0), (w / 2.0, h), outer);
+            let hole = smooth_box(x, y, (w / 2.0, -border), (w / 2.0 - border, h), inner);
+            let alpha = outside * (1.0 - hole) * color.a as f32 / 255.0;
+            bytes.extend_from_slice(&[
+                (color.b as f32 * alpha).round() as u8,
+                (color.g as f32 * alpha).round() as u8,
+                (color.r as f32 * alpha).round() as u8,
+                (alpha * 255.0).round() as u8,
+            ]);
+        }
+    }
+    bytes
 }
 
 pub fn app_id(window: &Window) -> String {
@@ -297,7 +341,7 @@ fn perform(state: &mut Slate, window: &Window, action: ClickAction) {
         ClickAction::Maximize => shell::toggle_maximized(state, window),
         ClickAction::Minimize => shell::minimize_window(state, window),
         ClickAction::Fullscreen => shell::toggle_fullscreen(state, window),
-        ClickAction::Close => shell::close_window(window),
+        ClickAction::Close => shell::close_window(state, window),
     }
 }
 
@@ -358,7 +402,7 @@ pub fn release(state: &mut Slate) {
         return;
     }
     match kind {
-        ButtonKind::Close => shell::close_window(&window),
+        ButtonKind::Close => shell::close_window(state, &window),
         ButtonKind::Maximize => shell::toggle_maximized(state, &window),
         ButtonKind::Minimize => shell::minimize_window(state, &window),
     }
@@ -410,6 +454,28 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
     });
 
     let mut borders = Vec::new();
+    let mut ring = None;
+    let rounded = rounding(state, key.maximized).filter(|_| insets.left > 0);
+    let ring_rows = rounded.map_or(0, |(outer, _)| outer.ceil() as i32);
+    if let Some((outer, _)) = rounded {
+        let rect = Rectangle::new(
+            (content.loc.x - insets.left, content.loc.y + content.size.h + insets.bottom - ring_rows).into(),
+            (content.size.w + insets.left + insets.right, ring_rows).into(),
+        );
+        let width = ((rect.size.w as f64 * scale).round() as usize).max(1);
+        let height = ((rect.size.h as f64 * scale).round() as usize).max(1);
+        let pixels = ring_pixels(
+            width,
+            height,
+            outer * scale as f32,
+            insets.bottom as f32 * scale as f32,
+            border_color(state, key.focused),
+        );
+        ring = Some((
+            MemoryRenderBuffer::from_slice(&pixels, Fourcc::Argb8888, (width as i32, height as i32), 1, Transform::Normal, None),
+            rect,
+        ));
+    }
     if insets.left > 0 {
         let color = border_color(state, key.focused);
         let top = if titlebar_height == 0 {
@@ -424,16 +490,20 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
             top,
             Rectangle::new(
                 (content.loc.x - insets.left, content.loc.y).into(),
-                (insets.left, content.size.h).into(),
+                (insets.left, content.size.h - (ring_rows - insets.bottom).max(0)).into(),
             ),
             Rectangle::new(
                 (content.loc.x + content.size.w, content.loc.y).into(),
-                (insets.right, content.size.h).into(),
+                (insets.right, content.size.h - (ring_rows - insets.bottom).max(0)).into(),
             ),
-            Rectangle::new(
-                (content.loc.x - insets.left, content.loc.y + content.size.h).into(),
-                (content.size.w + insets.left + insets.right, insets.bottom).into(),
-            ),
+            if ring.is_some() {
+                Rectangle::default()
+            } else {
+                Rectangle::new(
+                    (content.loc.x - insets.left, content.loc.y + content.size.h).into(),
+                    (content.size.w + insets.left + insets.right, insets.bottom).into(),
+                )
+            },
         ];
         for part in parts {
             if part.size.w > 0 && part.size.h > 0 {
@@ -455,6 +525,7 @@ fn build_cache(state: &Slate, key: Key, content: Rectangle<i32, Logical>, scale:
         key,
         titlebar,
         borders,
+        ring,
         titlebar_rect: rect,
         content_loc: content.loc,
     }
@@ -515,6 +586,22 @@ pub fn elements(
         ) {
             Ok(element) => elements.push(OutputElement::Memory(element)),
             Err(error) => tracing::error!(%error, "failed to upload the titlebar"),
+        }
+    }
+
+    if let Some((buffer, rect)) = &cache.ring {
+        let location = (rect.loc + shift - origin).to_f64().to_physical(scale);
+        match MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            location,
+            buffer,
+            Some(alpha),
+            None,
+            Some(rect.size),
+            Kind::Unspecified,
+        ) {
+            Ok(element) => elements.push(OutputElement::Memory(element)),
+            Err(error) => tracing::error!(%error, "failed to upload the frame corners"),
         }
     }
 

@@ -9,6 +9,7 @@ mod ipc;
 mod json;
 mod layout;
 mod monitors;
+mod overview;
 mod rules;
 mod scheme;
 mod session;

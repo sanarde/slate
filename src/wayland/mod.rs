@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 mod animation;
+mod blur;
+mod clip;
+mod closing;
 mod cursor;
 mod decoration;
 mod focus;
@@ -20,6 +23,7 @@ mod settings;
 mod shadow;
 mod shell;
 mod state;
+mod switcher;
 mod tiling;
 mod udev;
 mod winit;

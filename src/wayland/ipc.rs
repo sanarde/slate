@@ -137,7 +137,10 @@ impl Handler for Slate {
                 let target = window(self, id)?;
                 shell::activate_window(self, &target);
             }
-            Command::Close(id) => shell::close_window(&window(self, id)?),
+            Command::Close(id) => {
+                let target = window(self, id)?;
+                shell::close_window(self, &target);
+            }
             Command::Minimize(id) => {
                 let target = window(self, id)?;
                 shell::minimize_window(self, &target);

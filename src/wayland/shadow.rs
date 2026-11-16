@@ -16,6 +16,7 @@ const MAX_CACHED_SETS: usize = 12;
 pub struct Key {
     size: i32,
     radius: i32,
+    bottom: i32,
     color: u32,
     scale: u64,
 }
@@ -109,6 +110,7 @@ fn build(key: Key, color: Color) -> ShadowSet {
     let scale = f64::from_bits(key.scale) as f32;
     let size = key.size as f32 * scale;
     let radius = key.radius as f32 * scale;
+    let bottom = key.bottom as f32 * scale;
 
     ShadowSet {
         top: vertical_strip(size, color, true),
@@ -118,8 +120,8 @@ fn build(key: Key, color: Color) -> ShadowSet {
         corners: [
             corner(size, radius, color, false, false),
             corner(size, radius, color, true, false),
-            corner(size, 0.0, color, false, true),
-            corner(size, 0.0, color, true, true),
+            corner(size, bottom, color, false, true),
+            corner(size, bottom, color, true, true),
         ],
     }
 }
@@ -157,6 +159,7 @@ pub fn elements(
     renderer: &mut GlesRenderer,
     frame: Rectangle<i32, Logical>,
     radius: i32,
+    bottom: i32,
     focused: bool,
     origin: Point<i32, Logical>,
     scale: f64,
@@ -176,6 +179,7 @@ pub fn elements(
     let key = Key {
         size,
         radius,
+        bottom,
         color: (color.r as u32) << 24 | (color.g as u32) << 16 | (color.b as u32) << 8 | color.a as u32,
         scale: scale.to_bits(),
     };
@@ -193,12 +197,12 @@ pub fn elements(
 
     let mut elements = Vec::new();
     piece(renderer, &set.top, rect(x + radius, y - size, w - 2 * radius, size), origin, scale, alpha, &mut elements);
-    piece(renderer, &set.bottom, rect(x, y + h, w, size), origin, scale, alpha, &mut elements);
-    piece(renderer, &set.left, rect(x - size, y + radius, size, h - radius), origin, scale, alpha, &mut elements);
-    piece(renderer, &set.right, rect(x + w, y + radius, size, h - radius), origin, scale, alpha, &mut elements);
+    piece(renderer, &set.bottom, rect(x + bottom, y + h, w - 2 * bottom, size), origin, scale, alpha, &mut elements);
+    piece(renderer, &set.left, rect(x - size, y + radius, size, h - radius - bottom), origin, scale, alpha, &mut elements);
+    piece(renderer, &set.right, rect(x + w, y + radius, size, h - radius - bottom), origin, scale, alpha, &mut elements);
     piece(renderer, &set.corners[0], rect(x - size, y - size, size + radius, size + radius), origin, scale, alpha, &mut elements);
     piece(renderer, &set.corners[1], rect(x + w - radius, y - size, size + radius, size + radius), origin, scale, alpha, &mut elements);
-    piece(renderer, &set.corners[2], rect(x - size, y + h, size, size), origin, scale, alpha, &mut elements);
-    piece(renderer, &set.corners[3], rect(x + w, y + h, size, size), origin, scale, alpha, &mut elements);
+    piece(renderer, &set.corners[2], rect(x - size, y + h - bottom, size + bottom, size + bottom), origin, scale, alpha, &mut elements);
+    piece(renderer, &set.corners[3], rect(x + w - bottom, y + h - bottom, size + bottom, size + bottom), origin, scale, alpha, &mut elements);
     elements
 }

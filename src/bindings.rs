@@ -50,6 +50,11 @@ pub enum Action {
     WorkspacePrevious,
     FocusMonitor(Direction),
     MoveToMonitor(Direction),
+    Switcher,
+    SwitcherPrevious,
+    SwitcherCommit,
+    SwitcherCancel,
+    Overview,
     Scratchpad(String),
     Reload,
     Restart,
@@ -100,6 +105,18 @@ fn binding(primary: bool, shift: bool, key: &str, action: Action) -> Binding {
     }
 }
 
+fn alt_binding(shift: bool, key: &str, action: Action) -> Binding {
+    Binding {
+        modifiers: Modifiers {
+            alt: true,
+            shift,
+            ..Modifiers::default()
+        },
+        keysym: named(key).expect("built in key names are valid"),
+        action,
+    }
+}
+
 pub fn defaults() -> Vec<Binding> {
     let mut bindings = vec![
         binding(true, false, "Return", Action::Terminal),
@@ -109,8 +126,11 @@ pub fn defaults() -> Vec<Binding> {
         binding(true, true, "n", Action::RestoreMinimized),
         binding(true, false, "f", Action::Fullscreen),
         binding(true, true, "e", Action::Quit),
-        binding(true, false, "Tab", Action::FocusNext),
-        binding(true, true, "Tab", Action::FocusPrevious),
+        binding(true, false, "Tab", Action::Switcher),
+        binding(true, true, "Tab", Action::SwitcherPrevious),
+        alt_binding(false, "Tab", Action::Switcher),
+        alt_binding(true, "Tab", Action::SwitcherPrevious),
+        binding(true, false, "o", Action::Overview),
         binding(true, false, "t", Action::ToggleTiling),
         binding(true, false, "space", Action::LayoutNext),
         binding(true, true, "space", Action::ToggleFloating),
@@ -221,6 +241,11 @@ pub fn parse_action(text: &str) -> Result<Option<Action>, String> {
         "workspace-prev" => Action::WorkspacePrevious,
         "focus-monitor" => Action::FocusMonitor(Direction::parse(argument)?),
         "move-to-monitor" => Action::MoveToMonitor(Direction::parse(argument)?),
+        "switcher" => Action::Switcher,
+        "switcher-prev" => Action::SwitcherPrevious,
+        "switcher-commit" => Action::SwitcherCommit,
+        "switcher-cancel" => Action::SwitcherCancel,
+        "overview" => Action::Overview,
         "reload" => Action::Reload,
         "restart" => Action::Restart,
         "scratchpad" => {
