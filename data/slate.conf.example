@@ -140,6 +140,14 @@ theme = material-you
 #exec-once = waybar
 #xdg-autostart = true
 
+# Effects, Wayland only.
+#round-content = true
+#dim-inactive = 0
+#animate-close = true
+#blur-radius = 3
+#blur-passes = 2
+#window = app_id=foot => blur, opacity 0.85
+
 # Touchpad gestures, Wayland on a TTY only. A swipe with this many fingers runs the action of its direction.
 #gesture-fingers = 3
 #gesture-threshold = 100
@@ -154,7 +162,7 @@ theme = material-you
 # Actions: terminal, close, maximize, minimize, restore, fullscreen, quit, focus-next, focus-prev, workspace N,
 # move-to-workspace N, toggle-tiling, layout-next, toggle-floating, master-grow, master-shrink,
 # master-more, master-fewer, promote, swap-next, swap-prev, scratchpad NAME, reload, restart (X11 only),
-# workspace-next, workspace-prev, focus-monitor DIR, move-to-monitor DIR (next, prev, left, right, up, down),
+# switcher, switcher-prev, overview, workspace-next, workspace-prev, focus-monitor DIR, move-to-monitor DIR (next, prev, left, right, up, down),
 # exec COMMAND, none (removes a binding).
 #bind = Mod+d=exec rofi -show drun
 #bind = Mod+b=exec firefox

@@ -65,7 +65,8 @@ Key bindings. Mod is Super, except in `winit` where it is Alt. The bindings belo
 | Mod+f | Toggle fullscreen |
 | Mod+n | Minimize the focused window |
 | Mod+Shift+n | Restore the window that was minimized last |
-| Mod+Tab, Mod+Shift+Tab | Focus the next or the previous window |
+| Mod+Tab, Alt+Tab, add Shift for backwards | Window switcher with previews on Wayland, hold the modifier and press Tab again to move, release to switch. On X11 it focuses the next or the previous window. |
+| Mod+o | Overview of the windows on Wayland, click a window or press Return to switch to it, Esc closes the overview |
 | Mod+t | Switch the workspace between floating and its tiling layout |
 | Mod+space | Next layout of the workspace |
 | Mod+Shift+space | Toggle floating for the focused window |
@@ -183,7 +184,7 @@ Dialogs, windows with a fixed size, windows with a parent and the applications i
 
 The Wayland backend draws a soft shadow under windows that have a frame of Slate and animates windows. Both are on by default and can be turned off with `shadow-size = 0` and `animations = false`. The X11 backend has neither, because it has no compositor.
 
-Animations: a window fades and grows when it opens or is restored, windows move and resize smoothly when they are tiled, untiled, maximized or restored, and windows slide in when the workspace changes. Windows that close disappear at once.
+Animations: a window fades and grows when it opens or is restored, windows move and resize smoothly when they are tiled, untiled, maximized or restored, and windows slide in when the workspace changes. A window that is closed from Slate (titlebar button, key binding, panel, `slatectl close`) fades and shrinks. A window that its application closes by itself disappears at once, because its last picture is already gone.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -195,7 +196,11 @@ Animations: a window fades and grows when it opens or is restored, windows move 
 | `animation-duration` | 200 | Milliseconds, 0 turns animations off. |
 | `animation-curve` | `ease-out` | `linear`, `ease-out`, `ease-in-out` or `overshoot`. |
 | `animate-open`, `animate-move`, `animate-workspace` | true | Switches for opening and restoring, moving and resizing, and workspace changes. |
-| `animation-open-scale` | 94 | Percent of its size that an opening window starts from. |
+| `animate-close` | true | Close animation, see above. |
+| `animation-open-scale` | 94 | Percent of its size that an opening window starts from and a closing window shrinks to. |
+| `round-content` | true | Clip the content of windows with a frame of Slate to the rounded corners of the frame. |
+| `dim-inactive` | 0 | Percent by which windows that are not focused are darkened, up to 80. |
+| `blur-radius`, `blur-passes` | 3, 2 | Blur behind windows that have the `blur` rule. 0 for the radius turns it off. |
 
 ### Key bindings
 
@@ -207,6 +212,8 @@ The key `bindings` is a list of `COMBO=ACTION` entries that add to the built in 
 | `toggle-tiling`, `layout-next`, `toggle-floating` | Layout of the workspace and floating of the window. |
 | `master-grow`, `master-shrink`, `master-more`, `master-fewer`, `promote`, `swap-next`, `swap-prev` | Tiling adjustments. |
 | `focus-next`, `focus-prev` | Cycle the windows of the workspace. |
+| `switcher`, `switcher-prev`, `switcher-commit`, `switcher-cancel` | The window switcher. It ends when the modifier that started it is released, `switcher-commit` and `switcher-cancel` end it from a script. On X11 the first two do what `focus-next` and `focus-prev` do. |
+| `overview` | Show or hide the overview, Wayland only. |
 | `workspace N`, `move-to-workspace N` | N from 1. |
 | `workspace-next`, `workspace-prev` | Step through the workspaces, without wrapping around. |
 | `focus-monitor DIR`, `move-to-monitor DIR` | Move the pointer and the focus to another monitor or carry the focused window there. `DIR` is `next`, `prev` (in the order of the screen, from the left), `left`, `right`, `up` or `down`. A moved window keeps its offset inside the work area. |
@@ -276,6 +283,7 @@ button-layout = close:maximize
 | `fullscreen`, `maximize` | Open in that state. |
 | `opacity V` | From 0.05 to 1. Wayland draws it, X11 sets `_NET_WM_WINDOW_OPACITY` for a compositor. |
 | `no-shadow`, `no-decoration` | Wayland only for the shadow. `no-decoration` removes the frame on both backends. |
+| `blur` | Blur what is behind the window, Wayland only. It is meant for windows with `opacity` below 1 or with a transparent background. The area under such a window is redrawn on every frame, the blur does not follow the rounded corners yet. |
 | `scratchpad NAME` | Make the window the scratchpad NAME. |
 
 ```
