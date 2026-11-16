@@ -351,6 +351,10 @@ impl PointerGrab<Slate> for WindowGrab {
 
     fn unset(&mut self, data: &mut Slate) {
         if !matches!(self.kind, GrabKind::Resize(_)) {
+            if let Some(output) = super::shell::window_output(data, &self.window) {
+                let workspace = super::shell::workspace_on(data, &output);
+                super::shell::assign_workspace(&self.window, workspace);
+            }
             return;
         }
         if let Some(toplevel) = self.window.toplevel() {

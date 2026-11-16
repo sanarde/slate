@@ -93,12 +93,14 @@ impl Handler for Slate {
             })
             .collect();
 
+        let current = shell::current_workspace(self);
+        let active_name = shell::active_output(self).map(|output| output.name()).unwrap_or_default();
         let workspaces = (0..self.settings.workspace_count)
             .map(|index| WorkspaceInfo {
                 index,
-                layout: self.workspace_layouts[index].layout.name().to_string(),
+                layout: tiling::layout_of(self, &active_name, index).layout.name().to_string(),
                 windows: windows.iter().filter(|window| window.workspace == index).count(),
-                active: index == self.workspace,
+                active: index == current,
             })
             .collect();
 
@@ -115,12 +117,13 @@ impl Handler for Slate {
                     height: (size.h as f64 / scale).round() as i32,
                     scale,
                     enabled: info.enabled,
+                    workspace: shell::workspace_on(self, &info.output),
                 }
             })
             .collect();
 
         Snapshot {
-            workspace: self.workspace,
+            workspace: current,
             focused: focused.as_ref().map(shell::window_id),
             workspaces,
             windows,
@@ -161,10 +164,9 @@ impl Handler for Slate {
                 if workspace >= self.settings.workspace_count {
                     return Err("there is no such workspace".to_string());
                 }
-                self.workspace_layouts[workspace].layout = layout;
-                if workspace == self.workspace {
-                    tiling::arrange(self);
-                }
+                let output = shell::active_output(self).map(|output| output.name()).unwrap_or_default();
+                tiling::layout_mut(self, &output, workspace).layout = layout;
+                tiling::arrange(self);
                 emit(
                     self,
                     "layout",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use smithay::desktop::{Window, layer_map_for_output};
+use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State as ToplevelState;
 use smithay::utils::Rectangle;
 use smithay::wayland::compositor::with_states;
@@ -138,19 +139,52 @@ fn release(state: &mut Slate, window: &Window) {
     }
 }
 
-fn workspace_windows(state: &Slate, workspace: usize) -> Vec<Window> {
+fn workspace_windows(state: &Slate, workspace: usize, output: &Output) -> Vec<Window> {
     state
         .tile_order
         .iter()
-        .filter(|window| state.space.element_location(window).is_some() && workspace_of(window) == workspace)
+        .filter(|window| {
+            state.space.element_location(window).is_some()
+                && workspace_of(window) == workspace
+                && shell::output_for_window(state, window).as_ref() == Some(output)
+        })
         .cloned()
         .collect()
 }
 
+fn layout_entries<'a>(state: &'a mut Slate, output: &str) -> &'a mut Vec<WorkspaceLayout> {
+    let tiling = state.settings.tiling.clone();
+    state
+        .workspace_layouts
+        .entry(output.to_string())
+        .or_insert_with(|| vec![WorkspaceLayout::new(&tiling); 9])
+}
+
+pub fn layout_of(state: &mut Slate, output: &str, workspace: usize) -> WorkspaceLayout {
+    layout_entries(state, output)[workspace.min(8)]
+}
+
+pub fn layout_mut<'a>(state: &'a mut Slate, output: &str, workspace: usize) -> &'a mut WorkspaceLayout {
+    &mut layout_entries(state, output)[workspace.min(8)]
+}
+
+fn active(state: &Slate) -> Option<(Output, usize)> {
+    let output = shell::active_output(state)?;
+    let workspace = shell::workspace_on(state, &output);
+    Some((output, workspace))
+}
+
 pub fn arrange(state: &mut Slate) {
-    let workspace = state.workspace;
-    let current = state.workspace_layouts[workspace];
-    let windows = workspace_windows(state, workspace);
+    let outputs: Vec<Output> = state.space.outputs().cloned().collect();
+    for output in outputs {
+        arrange_output(state, &output);
+    }
+}
+
+fn arrange_output(state: &mut Slate, output: &Output) {
+    let workspace = shell::workspace_on(state, output);
+    let current = layout_of(state, &output.name(), workspace);
+    let windows = workspace_windows(state, workspace, output);
 
     for window in windows.iter().filter(|window| !eligible(window) && is_tiled(window)) {
         with_window_state(window, |window_state| {
@@ -158,6 +192,13 @@ pub fn arrange(state: &mut Slate) {
             window_state.float_rect = None;
         });
         set_tiled_states(window, false);
+    }
+
+    if !current.layout.tiles() {
+        for window in windows.iter().filter(|window| is_tiled(window)) {
+            release(state, window);
+        }
+        return;
     }
 
     let tiling = &state.settings.tiling;
@@ -168,40 +209,25 @@ pub fn arrange(state: &mut Slate) {
         master_count: current.masters,
     };
 
-    if !current.layout.tiles() {
-        for window in windows.iter().filter(|window| is_tiled(window)) {
-            release(state, window);
-        }
-        return;
-    }
-
     let focused = shell::focused_window(state);
-    let outputs: Vec<_> = state.space.outputs().cloned().collect();
-    for output in outputs {
-        let Some(geometry) = state.space.output_geometry(&output) else {
-            continue;
-        };
-        let mut zone = layer_map_for_output(&output).non_exclusive_zone();
-        zone.loc += geometry.loc;
-        let area = Area {
-            x: zone.loc.x,
-            y: zone.loc.y,
-            w: zone.size.w,
-            h: zone.size.h,
-        };
+    let Some(geometry) = state.space.output_geometry(output) else {
+        return;
+    };
+    let mut zone = layer_map_for_output(output).non_exclusive_zone();
+    zone.loc += geometry.loc;
+    let area = Area {
+        x: zone.loc.x,
+        y: zone.loc.y,
+        w: zone.size.w,
+        h: zone.size.h,
+    };
 
-        let mut group: Vec<Window> = windows
-            .iter()
-            .filter(|window| eligible(window) && shell::output_for_window(state, window).as_ref() == Some(&output))
-            .cloned()
-            .collect();
-        let tiles = layout::arrange(current.layout, area, group.len(), &params);
-
-        let mut pairs: Vec<(Window, Area)> = group.drain(..).zip(tiles).collect();
-        pairs.sort_by_key(|(window, _)| focused.as_ref() == Some(window));
-        for (window, tile) in pairs {
-            apply_tile(state, &window, tile);
-        }
+    let group: Vec<Window> = windows.iter().filter(|window| eligible(window)).cloned().collect();
+    let tiles = layout::arrange(current.layout, area, group.len(), &params);
+    let mut pairs: Vec<(Window, Area)> = group.into_iter().zip(tiles).collect();
+    pairs.sort_by_key(|(window, _)| focused.as_ref() == Some(window));
+    for (window, tile) in pairs {
+        apply_tile(state, &window, tile);
     }
 }
 
@@ -218,9 +244,11 @@ pub fn forget(state: &mut Slate, window: &Window) {
 }
 
 pub fn toggle_tiling(state: &mut Slate) {
-    let workspace = state.workspace;
+    let Some((output, workspace)) = active(state) else {
+        return;
+    };
     let default = state.settings.tiling.layout;
-    let entry = &mut state.workspace_layouts[workspace];
+    let entry = layout_mut(state, &output.name(), workspace);
     entry.layout = if entry.layout.tiles() {
         Layout::Floating
     } else if default.tiles() {
@@ -233,21 +261,27 @@ pub fn toggle_tiling(state: &mut Slate) {
 }
 
 pub fn layout_next(state: &mut Slate) {
-    let workspace = state.workspace;
-    let entry = &mut state.workspace_layouts[workspace];
+    let Some((output, workspace)) = active(state) else {
+        return;
+    };
+    let entry = layout_mut(state, &output.name(), workspace);
     entry.layout = entry.layout.next();
     announce(state);
     arrange(state);
 }
 
-fn announce(state: &Slate) {
-    let workspace = state.workspace;
+fn announce(state: &mut Slate) {
+    let Some((output, workspace)) = active(state) else {
+        return;
+    };
+    let name = layout_of(state, &output.name(), workspace).layout.name();
     super::ipc::emit(
         state,
         "layout",
         &[
             ("workspace", (workspace + 1).to_string()),
-            ("layout", crate::json::quote(state.workspace_layouts[workspace].layout.name())),
+            ("layout", crate::json::quote(name)),
+            ("output", crate::json::quote(&output.name())),
         ],
     );
 }
@@ -273,16 +307,20 @@ pub fn make_floating(state: &mut Slate, window: &Window) {
 }
 
 pub fn master_ratio(state: &mut Slate, grow: bool) {
-    let workspace = state.workspace;
-    let entry = &mut state.workspace_layouts[workspace];
+    let Some((output, workspace)) = active(state) else {
+        return;
+    };
+    let entry = layout_mut(state, &output.name(), workspace);
     let step = if grow { RATIO_STEP } else { -RATIO_STEP };
     entry.ratio = (entry.ratio + step).clamp(0.1, 0.9);
     arrange(state);
 }
 
 pub fn master_count(state: &mut Slate, more: bool) {
-    let workspace = state.workspace;
-    let entry = &mut state.workspace_layouts[workspace];
+    let Some((output, workspace)) = active(state) else {
+        return;
+    };
+    let entry = layout_mut(state, &output.name(), workspace);
     entry.masters = if more {
         (entry.masters + 1).min(MAX_MASTERS)
     } else {
@@ -296,8 +334,11 @@ fn position_of(state: &Slate, window: &Window) -> Option<usize> {
 }
 
 pub fn promote(state: &mut Slate, window: &Window) {
+    let Some(output) = shell::window_output(state, window) else {
+        return;
+    };
     let workspace = workspace_of(window);
-    let siblings = workspace_windows(state, workspace);
+    let siblings = workspace_windows(state, workspace, &output);
     let Some(first) = siblings.iter().find(|candidate| eligible(candidate)).cloned() else {
         return;
     };
@@ -320,7 +361,10 @@ fn swap(state: &mut Slate, a: &Window, b: &Window) {
 }
 
 pub fn swap_neighbor(state: &mut Slate, window: &Window, forward: bool) {
-    let siblings: Vec<Window> = workspace_windows(state, workspace_of(window))
+    let Some(output) = shell::window_output(state, window) else {
+        return;
+    };
+    let siblings: Vec<Window> = workspace_windows(state, workspace_of(window), &output)
         .into_iter()
         .filter(eligible)
         .collect();
@@ -340,8 +384,5 @@ pub fn swap_neighbor(state: &mut Slate, window: &Window, forward: bool) {
 }
 
 pub fn reset_layouts(state: &mut Slate) {
-    let tiling = state.settings.tiling.clone();
-    for entry in &mut state.workspace_layouts {
-        *entry = WorkspaceLayout::new(&tiling);
-    }
+    state.workspace_layouts.clear();
 }

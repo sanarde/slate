@@ -75,7 +75,7 @@ fn place_window(state: &mut Slate, window: Window) {
         &decoration::title(&window),
     );
     let target = applied.workspace.filter(|index| *index < state.settings.workspace_count);
-    let workspace = state.workspace;
+    let workspace = current_workspace(state);
     state.next_window_id += 1;
     let id = state.next_window_id;
     with_window_state(&window, |window_state| {
@@ -135,13 +135,29 @@ fn place_window(state: &mut Slate, window: Window) {
     }
 }
 
+fn centered_on_active(state: &Slate, window: &Window, location: Point<i32, Logical>) -> Point<i32, Logical> {
+    let Some(output) = active_output(state) else {
+        return location;
+    };
+    if window_output(state, window).as_ref() == Some(&output) {
+        return location;
+    }
+    let zone = active_zone(state);
+    let size = window.geometry().size;
+    let insets = decoration::insets(state, window);
+    Point::from((
+        zone.loc.x + ((zone.size.w - size.w - insets.left - insets.right) / 2).max(0) + insets.left,
+        zone.loc.y + ((zone.size.h - size.h - insets.top - insets.bottom) / 2).max(0) + insets.top,
+    ))
+}
+
 pub fn rule_of(window: &Window) -> Applied {
     with_window_state(window, |window_state| window_state.rule.clone())
 }
 
 pub fn toggle_scratchpad(state: &mut Slate, name: &str) {
     let belongs = |window: &Window| rule_of(window).scratchpad.as_deref() == Some(name);
-    let current = state.workspace;
+    let current = current_workspace(state);
 
     let visible = state.space.elements().find(|window| belongs(window)).cloned();
     if let Some(window) = visible {
@@ -156,6 +172,7 @@ pub fn toggle_scratchpad(state: &mut Slate, name: &str) {
     if let Some(index) = state.parked.iter().position(|(window, _)| belongs(window)) {
         let (window, location) = state.parked.remove(index);
         with_window_state(&window, |window_state| window_state.workspace = current);
+        let location = centered_on_active(state, &window, location);
         state.space.map_element(window.clone(), location, true);
         focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
         tiling::arrange(state);
@@ -172,6 +189,10 @@ pub fn toggle_scratchpad(state: &mut Slate, name: &str) {
         .cloned()
     {
         with_window_state(&window, |window_state| window_state.workspace = current);
+        if let Some(index) = state.minimized.iter().position(|(known, _)| known == &window) {
+            let location = state.minimized[index].1;
+            state.minimized[index].1 = centered_on_active(state, &window, location);
+        }
         restore_window(state, &window);
         return;
     }
@@ -255,70 +276,143 @@ pub(super) fn workspace_of(window: &Window) -> usize {
     with_window_state(window, |window_state| window_state.workspace)
 }
 
+pub fn active_output(state: &Slate) -> Option<Output> {
+    let location = state.seat.get_pointer()?.current_location();
+    state
+        .space
+        .output_under(location)
+        .next()
+        .or_else(|| state.space.outputs().next())
+        .cloned()
+}
+
+pub fn workspace_on(state: &Slate, output: &Output) -> usize {
+    state
+        .output_workspaces
+        .get(&output.name())
+        .copied()
+        .unwrap_or(0)
+        .min(state.settings.workspace_count.saturating_sub(1))
+}
+
+pub fn current_workspace(state: &Slate) -> usize {
+    active_output(state).map_or(0, |output| workspace_on(state, &output))
+}
+
+pub(super) fn window_output(state: &Slate, window: &Window) -> Option<Output> {
+    if let Some(output) = state.space.outputs_for_element(window).into_iter().next() {
+        return Some(output);
+    }
+    let location = state
+        .parked
+        .iter()
+        .chain(state.minimized.iter())
+        .find(|(candidate, _)| candidate == window)
+        .map(|(_, location)| *location);
+    location
+        .and_then(|location| state.space.output_under(location.to_f64()).next().cloned())
+        .or_else(|| active_output(state))
+}
+
+pub fn assign_workspace(window: &Window, workspace: usize) {
+    with_window_state(window, |window_state| window_state.workspace = workspace);
+}
+
+fn top_on(state: &Slate, output: &Output) -> Option<Window> {
+    state
+        .space
+        .elements()
+        .rev()
+        .find(|window| !is_override_redirect(window) && output_for_window(state, window).as_ref() == Some(output))
+        .cloned()
+}
+
 pub fn switch_workspace(state: &mut Slate, target: usize) {
-    if target >= state.settings.workspace_count || target == state.workspace {
+    if let Some(output) = active_output(state) {
+        switch_workspace_on(state, &output, target);
+    }
+}
+
+pub fn switch_workspace_on(state: &mut Slate, output: &Output, target: usize) {
+    let previous = workspace_on(state, output);
+    if target >= state.settings.workspace_count || target == previous {
         return;
     }
 
-    let leaving: Vec<Window> = state
+    let here: Vec<Window> = state
         .space
         .elements()
-        .filter(|window| !is_override_redirect(window) && !rule_of(window).sticky)
+        .filter(|window| !is_override_redirect(window) && output_for_window(state, window).as_ref() == Some(output))
         .cloned()
         .collect();
-    let carried: Vec<Window> = state
-        .space
-        .elements()
-        .filter(|window| !is_override_redirect(window) && rule_of(window).sticky)
-        .cloned()
-        .collect();
-    for window in carried {
-        with_window_state(&window, |window_state| window_state.workspace = target);
-    }
-    for window in leaving {
-        if let Some(location) = state.space.element_location(&window) {
+    for window in &here {
+        if rule_of(window).sticky {
+            assign_workspace(window, target);
+            continue;
+        }
+        if let Some(location) = state.space.element_location(window) {
             state.parked.push((window.clone(), location));
         }
-        state.space.unmap_elem(&window);
+        state.space.unmap_elem(window);
     }
 
-    let previous = state.workspace;
-    state.workspace = target;
+    state.output_workspaces.insert(output.name(), target);
     let arriving: Vec<(Window, Point<i32, Logical>)> = state
         .parked
         .iter()
-        .filter(|(window, _)| workspace_of(window) == target)
+        .filter(|(window, location)| workspace_of(window) == target && output_at(state, *location).as_ref() == Some(output))
         .cloned()
         .collect();
-    state.parked.retain(|(window, _)| workspace_of(window) != target);
+    state.parked.retain(|entry| !arriving.contains(entry));
     let sliding: Vec<Window> = arriving.iter().map(|(window, _)| window.clone()).collect();
     for (window, location) in arriving {
         state.space.map_element(window, location, false);
     }
 
-    let top = state.space.elements().next_back().cloned();
-    focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    let top = top_on(state, output);
+    let pointer_here = active_output(state).as_ref() == Some(output);
+    if pointer_here || top.is_some() {
+        focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
+    }
     tiling::arrange(state);
     for window in &sliding {
         animation::start_slide(state, window, target > previous);
     }
-    ipc::emit(state, "workspace", &[("index", (target + 1).to_string())]);
+    ipc::emit(
+        state,
+        "workspace",
+        &[
+            ("index", (target + 1).to_string()),
+            ("output", crate::json::quote(&output.name())),
+        ],
+    );
+}
+
+fn output_at(state: &Slate, location: Point<i32, Logical>) -> Option<Output> {
+    state.space.output_under(location.to_f64()).next().cloned()
 }
 
 pub fn switch_relative(state: &mut Slate, forward: bool) {
     let count = state.settings.workspace_count;
+    let current = current_workspace(state);
     let target = if forward {
-        (state.workspace + 1).min(count.saturating_sub(1))
+        (current + 1).min(count.saturating_sub(1))
     } else {
-        state.workspace.saturating_sub(1)
+        current.saturating_sub(1)
     };
     switch_workspace(state, target);
 }
 
 pub fn clamp_workspaces(state: &mut Slate) {
     let last = state.settings.workspace_count.saturating_sub(1);
-    if state.workspace > last {
-        switch_workspace(state, last);
+    let outputs: Vec<Output> = state.space.outputs().cloned().collect();
+    for output in &outputs {
+        if workspace_on(state, output) > last {
+            switch_workspace_on(state, output, last);
+        }
+    }
+    for value in state.output_workspaces.values_mut() {
+        *value = (*value).min(last);
     }
 
     let stranded: Vec<Window> = state
@@ -328,19 +422,24 @@ pub fn clamp_workspaces(state: &mut Slate) {
         .map(|(window, _)| window.clone())
         .collect();
     for window in &stranded {
-        with_window_state(window, |window_state| window_state.workspace = last);
+        assign_workspace(window, last);
     }
-    if last != state.workspace {
-        return;
-    }
+    reveal_parked(state);
+}
 
+fn reveal_parked(state: &mut Slate) {
+    let outputs: Vec<Output> = state.space.outputs().cloned().collect();
     let arriving: Vec<(Window, Point<i32, Logical>)> = state
         .parked
         .iter()
-        .filter(|(window, _)| stranded.contains(window))
+        .filter(|(window, location)| {
+            output_at(state, *location).is_some_and(|output| {
+                outputs.contains(&output) && workspace_of(window) == workspace_on(state, &output)
+            })
+        })
         .cloned()
         .collect();
-    state.parked.retain(|(window, _)| !stranded.contains(window));
+    state.parked.retain(|entry| !arriving.contains(entry));
     for (window, location) in arriving {
         state.space.map_element(window, location, false);
     }
@@ -350,8 +449,11 @@ pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
     if target >= state.settings.workspace_count || rule_of(window).sticky {
         return;
     }
-    with_window_state(window, |window_state| window_state.workspace = target);
-    if target == state.workspace {
+    assign_workspace(window, target);
+    let Some(output) = window_output(state, window) else {
+        return;
+    };
+    if target == workspace_on(state, &output) {
         return;
     }
 
@@ -360,9 +462,19 @@ pub fn move_to_workspace(state: &mut Slate, window: &Window, target: usize) {
     }
     state.space.unmap_elem(window);
 
-    let top = state.space.elements().next_back().cloned();
+    let top = top_on(state, &output);
     focus_window(state, top.as_ref(), SERIAL_COUNTER.next_serial());
     tiling::arrange(state);
+}
+
+pub fn show_workspace_of(state: &mut Slate, window: &Window) {
+    let Some(output) = window_output(state, window) else {
+        return;
+    };
+    let workspace = workspace_of(window);
+    if workspace != workspace_on(state, &output) {
+        switch_workspace_on(state, &output, workspace);
+    }
 }
 
 pub fn minimize_window(state: &mut Slate, window: &Window) {
@@ -397,10 +509,9 @@ pub fn restore_window(state: &mut Slate, window: &Window) {
     };
     let (window, location) = state.minimized.remove(index);
 
-    let workspace = workspace_of(&window);
-    if workspace != state.workspace {
-        switch_workspace(state, workspace);
-    }
+    state.minimized.push((window.clone(), location));
+    show_workspace_of(state, &window);
+    state.minimized.retain(|(known, _)| known != &window);
     state.space.map_element(window.clone(), location, true);
     scale::update(state);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
@@ -420,10 +531,7 @@ pub fn activate_window(state: &mut Slate, window: &Window) {
         restore_window(state, window);
         return;
     }
-    let workspace = workspace_of(window);
-    if workspace != state.workspace {
-        switch_workspace(state, workspace);
-    }
+    show_workspace_of(state, window);
     focus_window(state, Some(window), SERIAL_COUNTER.next_serial());
 }
 
@@ -449,10 +557,7 @@ pub fn activate_surface(state: &mut Slate, surface: &WlSurface) {
         return;
     };
 
-    let workspace = workspace_of(&window);
-    if workspace != state.workspace {
-        switch_workspace(state, workspace);
-    }
+    show_workspace_of(state, &window);
     focus_window(state, Some(&window), SERIAL_COUNTER.next_serial());
 }
 

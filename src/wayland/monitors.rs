@@ -115,6 +115,7 @@ pub fn move_to_monitor(state: &mut Slate, window: &Window, direction: Direction)
     let location = Point::from((x + insets.left, y + insets.top));
 
     state.space.map_element(window.clone(), location, false);
+    shell::assign_workspace(window, shell::workspace_on(state, &target));
     if let Some(to) = decoration::frame_rect(state, window) {
         animation::start_geometry(state, window, frame, to);
     }
