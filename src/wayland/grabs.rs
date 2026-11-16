@@ -192,7 +192,18 @@ impl WindowGrab {
 
         match self.kind {
             GrabKind::Move => {
-                let position = self.initial.loc + delta;
+                let mut position = self.initial.loc + delta;
+                let insets = super::decoration::insets(state, &self.window);
+                let frame = (
+                    position.x - insets.left,
+                    position.y - insets.top,
+                    self.initial.size.w + insets.left + insets.right,
+                    self.initial.size.h + insets.top + insets.bottom,
+                );
+                let bounds = super::input::outputs_bounds(state);
+                let (x, y) = crate::monitors::keep_reachable(frame, (bounds.loc.x, bounds.loc.y, bounds.size.w, bounds.size.h));
+                position.x += x - frame.0;
+                position.y += y - frame.1;
                 state.space.map_element(self.window.clone(), position, true);
                 if let Some(surface) = self.window.x11_surface() {
                     let _ = surface.configure(Rectangle::new(position, self.initial.size));

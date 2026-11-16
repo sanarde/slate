@@ -408,7 +408,7 @@ pub(super) fn run(state: &mut Slate, action: Action) {
     }
 }
 
-fn outputs_bounds(state: &Slate) -> Rectangle<i32, Logical> {
+pub(super) fn outputs_bounds(state: &Slate) -> Rectangle<i32, Logical> {
     state
         .space
         .outputs()

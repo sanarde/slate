@@ -66,6 +66,14 @@ pub fn pick(monitors: &[Bounds], current: usize, direction: Direction) -> Option
         .map(|(index, _)| index)
 }
 
+pub const GRIP: i32 = 48;
+
+pub fn keep_reachable(frame: Bounds, bounds: Bounds) -> (i32, i32) {
+    let x = frame.0.clamp(bounds.0 - frame.2 + GRIP, (bounds.0 + bounds.2 - GRIP).max(bounds.0 - frame.2 + GRIP));
+    let y = frame.1.clamp(bounds.1, (bounds.1 + bounds.3 - GRIP).max(bounds.1));
+    (x, y)
+}
+
 pub fn clamp_into(frame: Bounds, source: Bounds, target: Bounds) -> (i32, i32) {
     let offset_x = (frame.0 - source.0).clamp(0, (target.2 - frame.2).max(0));
     let offset_y = (frame.1 - source.1).clamp(0, (target.3 - frame.3).max(0));
@@ -109,6 +117,14 @@ mod tests {
         let target = (1920, 0, 1280, 720);
         assert_eq!(clamp_into((100, 50, 400, 300), source, target), (2020, 50));
         assert_eq!(clamp_into((1500, 900, 400, 300), source, target), (1920 + 880, 420));
+    }
+
+    #[test]
+    fn a_dragged_frame_keeps_a_grip_on_the_screen() {
+        let screen = (0, 0, 1920, 1080);
+        assert_eq!(keep_reachable((500, 300, 400, 300), screen), (500, 300));
+        assert_eq!(keep_reachable((-900, -50, 400, 300), screen), (-352, 0));
+        assert_eq!(keep_reachable((3000, 2000, 400, 300), screen), (1872, 1032));
     }
 
     #[test]
