@@ -126,12 +126,12 @@ impl Wm {
     }
 
     pub(super) fn layout_on(&self, monitor: usize, workspace: usize) -> WorkspaceLayout {
-        self.workspace_layouts[monitor.min(self.workspace_layouts.len() - 1)][workspace.min(super::WORKSPACE_LIMIT - 1)]
+        self.workspace_layouts[monitor.min(self.workspace_layouts.len() - 1)][workspace.min(crate::config::MAX_WORKSPACES - 1)]
     }
 
     pub(super) fn layout_mut(&mut self, monitor: usize, workspace: usize) -> &mut WorkspaceLayout {
         let monitor = monitor.min(self.workspace_layouts.len() - 1);
-        &mut self.workspace_layouts[monitor][workspace.min(super::WORKSPACE_LIMIT - 1)]
+        &mut self.workspace_layouts[monitor][workspace.min(crate::config::MAX_WORKSPACES - 1)]
     }
 
     fn arrange_monitor(&mut self, monitor: usize) -> Result<()> {

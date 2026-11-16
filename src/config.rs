@@ -7,6 +7,8 @@ use crate::layout::Layout;
 use crate::rules::{self, Rule};
 
 pub const PREFIX: &str = "/org/nuros/sanar/slate/";
+pub const MAX_WORKSPACES: usize = 9;
+
 pub const LIST_KEYS: [&str; 6] = [
     "bindings",
     "decoration-rules",
@@ -547,7 +549,7 @@ impl Settings {
                 ],
             ),
             terminal: optional(values, "terminal"),
-            workspace_count: int(values, "workspace-count", 1, 9) as usize,
+            workspace_count: int(values, "workspace-count", 1, MAX_WORKSPACES as i64) as usize,
             border_width: int(values, "border-width", 0, 32) as u32,
             border_focused: rgb_value(color(values, "border-color-focused")),
             border_unfocused: rgb_value(color(values, "border-color-unfocused")),

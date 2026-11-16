@@ -11,6 +11,7 @@ use super::animation;
 use super::decoration;
 use super::shell::{self, with_window_state, workspace_of};
 use super::state::Slate;
+use crate::config::MAX_WORKSPACES;
 use crate::layout::{self, Area, Layout, Params, WorkspaceLayout};
 
 const RATIO_STEP: f32 = 0.05;
@@ -157,15 +158,15 @@ fn layout_entries<'a>(state: &'a mut Slate, output: &str) -> &'a mut Vec<Workspa
     state
         .workspace_layouts
         .entry(output.to_string())
-        .or_insert_with(|| vec![WorkspaceLayout::new(&tiling); 9])
+        .or_insert_with(|| vec![WorkspaceLayout::new(&tiling); MAX_WORKSPACES])
 }
 
 pub fn layout_of(state: &mut Slate, output: &str, workspace: usize) -> WorkspaceLayout {
-    layout_entries(state, output)[workspace.min(8)]
+    layout_entries(state, output)[workspace.min(MAX_WORKSPACES - 1)]
 }
 
 pub fn layout_mut<'a>(state: &'a mut Slate, output: &str, workspace: usize) -> &'a mut WorkspaceLayout {
-    &mut layout_entries(state, output)[workspace.min(8)]
+    &mut layout_entries(state, output)[workspace.min(MAX_WORKSPACES - 1)]
 }
 
 fn active(state: &Slate) -> Option<(Output, usize)> {

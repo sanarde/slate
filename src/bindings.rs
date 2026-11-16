@@ -4,7 +4,7 @@ use smithay::input::keyboard::xkb;
 
 use crate::monitors::Direction;
 
-pub const WORKSPACE_KEYS: usize = 9;
+pub const WORKSPACE_KEYS: usize = crate::config::MAX_WORKSPACES;
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct Modifiers {

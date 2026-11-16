@@ -66,7 +66,7 @@ pub fn focus_monitor(state: &mut Slate, direction: Direction) {
         f64::from(zone.loc.y) + f64::from(zone.size.h) / 2.0,
     )
         .into();
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     let under = input::surface_under(state, location);
     pointer.motion(
         state,

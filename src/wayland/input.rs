@@ -71,12 +71,12 @@ pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
         InputEvent::GesturePinchBegin { event } => {
             let fingers = event.fingers();
             let (serial, time) = (SERIAL_COUNTER.next_serial(), event.time_msec());
-            let pointer = state.seat.get_pointer().unwrap();
+            let pointer = state.pointer();
             pointer.gesture_pinch_begin(state, &gesture::GesturePinchBeginEvent { serial, time, fingers });
             pointer.frame(state);
         }
         InputEvent::GesturePinchUpdate { event } => {
-            let pointer = state.seat.get_pointer().unwrap();
+            let pointer = state.pointer();
             pointer.gesture_pinch_update(
                 state,
                 &gesture::GesturePinchUpdateEvent {
@@ -90,20 +90,20 @@ pub fn process<B: InputBackend>(state: &mut Slate, event: InputEvent<B>) {
         }
         InputEvent::GesturePinchEnd { event } => {
             let (serial, time, cancelled) = (SERIAL_COUNTER.next_serial(), event.time_msec(), event.cancelled());
-            let pointer = state.seat.get_pointer().unwrap();
+            let pointer = state.pointer();
             pointer.gesture_pinch_end(state, &gesture::GesturePinchEndEvent { serial, time, cancelled });
             pointer.frame(state);
         }
         InputEvent::GestureHoldBegin { event } => {
             let fingers = event.fingers();
             let (serial, time) = (SERIAL_COUNTER.next_serial(), event.time_msec());
-            let pointer = state.seat.get_pointer().unwrap();
+            let pointer = state.pointer();
             pointer.gesture_hold_begin(state, &gesture::GestureHoldBeginEvent { serial, time, fingers });
             pointer.frame(state);
         }
         InputEvent::GestureHoldEnd { event } => {
             let (serial, time, cancelled) = (SERIAL_COUNTER.next_serial(), event.time_msec(), event.cancelled());
-            let pointer = state.seat.get_pointer().unwrap();
+            let pointer = state.pointer();
             pointer.gesture_hold_end(state, &gesture::GestureHoldEndEvent { serial, time, cancelled });
             pointer.frame(state);
         }
@@ -131,7 +131,7 @@ fn swipe_begin<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeBeginEv
         return;
     }
     let serial = SERIAL_COUNTER.next_serial();
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     pointer.gesture_swipe_begin(
         state,
         &gesture::GestureSwipeBeginEvent {
@@ -149,7 +149,7 @@ fn swipe_update<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeUpdate
         *y += event.delta_y();
         return;
     }
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     pointer.gesture_swipe_update(
         state,
         &gesture::GestureSwipeUpdateEvent {
@@ -181,7 +181,7 @@ fn swipe_end<B: InputBackend>(state: &mut Slate, event: B::GestureSwipeEndEvent)
         return;
     }
     let serial = SERIAL_COUNTER.next_serial();
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     pointer.gesture_swipe_end(
         state,
         &gesture::GestureSwipeEndEvent {
@@ -283,7 +283,7 @@ fn keyboard_key<B: InputBackend>(state: &mut Slate, event: B::KeyboardKeyEvent) 
     let serial = SERIAL_COUNTER.next_serial();
     let time = Event::time_msec(&event);
     let key_state = event.state();
-    let keyboard = state.seat.get_keyboard().unwrap();
+    let keyboard = state.keyboard();
 
     let pressed = keyboard.input(state, event.key_code(), key_state, serial, time, |state, modifiers, handle| {
         if switcher::active(state) {
@@ -367,7 +367,7 @@ pub(super) fn run(state: &mut Slate, action: Action) {
             }
         }
         Action::Switcher | Action::SwitcherPrevious => {
-            let modifiers = state.seat.get_keyboard().unwrap().modifier_state();
+            let modifiers = state.keyboard().modifier_state();
             switcher::start_cycle(state, action == Action::Switcher, &modifiers);
         }
         Action::SwitcherCommit => switcher::commit(state),
@@ -431,7 +431,7 @@ fn clamp_to_outputs(state: &Slate, location: Point<f64, Logical>) -> Point<f64, 
 }
 
 fn pointer_motion<B: InputBackend>(state: &mut Slate, event: B::PointerMotionEvent) {
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     let location = clamp_to_outputs(state, pointer.current_location() + event.delta());
     let serial = SERIAL_COUNTER.next_serial();
     if switcher::active(state) {
@@ -470,7 +470,7 @@ fn pointer_motion_absolute<B: InputBackend>(state: &mut Slate, event: B::Pointer
     let bounds = outputs_bounds(state);
     let location = event.position_transformed(bounds.size) + bounds.loc.to_f64();
     let serial = SERIAL_COUNTER.next_serial();
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     if switcher::active(state) {
         switcher::hover(state, location);
         pointer.motion(state, None, &MotionEvent { location, serial, time: event.time_msec() });
@@ -495,8 +495,8 @@ fn pointer_motion_absolute<B: InputBackend>(state: &mut Slate, event: B::Pointer
 }
 
 fn pointer_button<B: InputBackend>(state: &mut Slate, event: B::PointerButtonEvent) {
-    let pointer = state.seat.get_pointer().unwrap();
-    let keyboard = state.seat.get_keyboard().unwrap();
+    let pointer = state.pointer();
+    let keyboard = state.keyboard();
     let serial = SERIAL_COUNTER.next_serial();
     let button = event.button_code();
     let button_state = event.state();
@@ -578,7 +578,7 @@ fn pointer_axis<B: InputBackend>(state: &mut Slate, event: B::PointerAxisEvent) 
         }
     }
 
-    let pointer = state.seat.get_pointer().unwrap();
+    let pointer = state.pointer();
     pointer.axis(state, frame);
     pointer.frame(state);
 }
