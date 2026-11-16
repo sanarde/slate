@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 mod atoms;
+mod framing;
 mod geometry;
 mod keys;
 mod wm;

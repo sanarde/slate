@@ -11,23 +11,17 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::{Drag, Edges, Result, Wm};
 use crate::config::{ButtonKind, ClickAction, Color, DecorationMode, RuleMode};
 use crate::titlebar::{self, Params};
+use crate::x11::framing;
 use crate::x11::geometry::Rect;
 
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
-const CORNER_SPAN: i32 = 12;
 const MOTIF_DECORATIONS: u32 = 2;
 const BUTTON_LEFT: u8 = 1;
 const BUTTON_MIDDLE: u8 = 2;
 const BUTTON_RIGHT: u8 = 3;
 const SHAPE_CORNER_ALPHA: u8 = 128;
 
-#[derive(Clone, Copy, Default, PartialEq)]
-pub(super) struct Insets {
-    pub left: i32,
-    pub right: i32,
-    pub top: i32,
-    pub bottom: i32,
-}
+pub(super) use crate::x11::framing::Insets;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum FrameHit {
@@ -102,23 +96,12 @@ impl Wm {
     }
 
     pub(super) fn insets_when_framed(&self, maximized: bool, fullscreen: bool) -> Insets {
-        if fullscreen {
-            return Insets::default();
-        }
-        let border = self.settings.border_width as i32;
-        let titlebar = self.settings.decoration.titlebar_height as i32;
-        if maximized {
-            return Insets {
-                top: titlebar,
-                ..Insets::default()
-            };
-        }
-        Insets {
-            left: border,
-            right: border,
-            top: titlebar + border,
-            bottom: border,
-        }
+        framing::insets(
+            maximized,
+            fullscreen,
+            self.settings.border_width as i32,
+            self.settings.decoration.titlebar_height as i32,
+        )
     }
 
     pub(super) fn insets_for(&self, index: usize) -> Insets {
@@ -543,23 +526,9 @@ impl Wm {
         if !client.maximized {
             let thickness = (self.settings.border_width as i32).max(1);
             let top_zone = thickness + self.settings.decoration.resize_margin as i32;
-            let mut edges = Edges {
-                left: x < thickness,
-                right: x >= width - thickness,
-                top: y < top_zone,
-                bottom: y >= height - thickness,
-            };
-            if edges.left || edges.right || edges.top || edges.bottom {
-                let vertical = edges.left || edges.right;
-                let horizontal = edges.top || edges.bottom;
-                if vertical && !horizontal {
-                    edges.top = y < CORNER_SPAN;
-                    edges.bottom = y >= height - CORNER_SPAN;
-                } else if horizontal && !vertical {
-                    edges.left = x < CORNER_SPAN;
-                    edges.right = x >= width - CORNER_SPAN;
-                }
-                return Some(FrameHit::Resize(edges));
+            let bits = framing::edges(width, height, x, y, thickness, top_zone);
+            if bits != 0 {
+                return Some(FrameHit::Resize(Edges::from_bits(bits)));
             }
         }
 
@@ -582,16 +551,7 @@ impl Wm {
 
     fn cursor_for(&self, hit: Option<FrameHit>) -> Cursor {
         let glyph = match hit {
-            Some(FrameHit::Resize(edges)) => match (edges.left, edges.right, edges.top, edges.bottom) {
-                (true, _, true, _) => 134,
-                (_, true, true, _) => 136,
-                (true, _, _, true) => 12,
-                (_, true, _, true) => 14,
-                (true, _, _, _) => 70,
-                (_, true, _, _) => 96,
-                (_, _, true, _) => 138,
-                _ => 16,
-            },
+            Some(FrameHit::Resize(edges)) => framing::cursor_glyph(edges.bits()) as u16,
             _ => 68,
         };
         self.cursors.get(&glyph).copied().unwrap_or(NONE)

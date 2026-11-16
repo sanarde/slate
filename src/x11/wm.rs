@@ -19,6 +19,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{CURRENT_TIME, NONE};
 
 use super::atoms::Atoms;
+use super::framing;
 use super::geometry::{Rect, Strut};
 use super::keys;
 mod frame;
@@ -93,6 +94,25 @@ struct Edges {
     right: bool,
     top: bool,
     bottom: bool,
+}
+
+impl Edges {
+    fn from_bits(bits: u32) -> Edges {
+        Edges {
+            left: bits & framing::EDGE_LEFT != 0,
+            right: bits & framing::EDGE_RIGHT != 0,
+            top: bits & framing::EDGE_TOP != 0,
+            bottom: bits & framing::EDGE_BOTTOM != 0,
+        }
+    }
+
+    fn bits(self) -> u32 {
+        let flag = |set: bool, bit: u32| if set { bit } else { 0 };
+        flag(self.left, framing::EDGE_LEFT)
+            | flag(self.right, framing::EDGE_RIGHT)
+            | flag(self.top, framing::EDGE_TOP)
+            | flag(self.bottom, framing::EDGE_BOTTOM)
+    }
 }
 
 struct Drag {
@@ -951,19 +971,8 @@ impl Wm {
         let Some(client) = self.clients.iter().find(|client| client.window == window) else {
             return Ok(());
         };
-        let event = ConfigureNotifyEvent {
-            response_type: CONFIGURE_NOTIFY_EVENT,
-            sequence: 0,
-            event: window,
-            window,
-            above_sibling: NONE,
-            x: client.rect.x as i16,
-            y: client.rect.y as i16,
-            width: client.rect.w as u16,
-            height: client.rect.h as u16,
-            border_width: if client.frame.is_some() { 0 } else { self.settings.border_width as u16 },
-            override_redirect: false,
-        };
+        let border = if client.frame.is_some() { 0 } else { self.settings.border_width };
+        let event = framing::configure_notify(window, client.rect.x, client.rect.y, client.rect.w, client.rect.h, border);
         self.conn.send_event(false, window, EventMask::STRUCTURE_NOTIFY, event)?;
         Ok(())
     }

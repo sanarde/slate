@@ -20,6 +20,25 @@ struct sl_strut {
 	uint32_t bottom;
 };
 
+#define SL_EDGE_LEFT 1u
+#define SL_EDGE_RIGHT 2u
+#define SL_EDGE_TOP 4u
+#define SL_EDGE_BOTTOM 8u
+
+struct sl_insets {
+	int32_t left;
+	int32_t right;
+	int32_t top;
+	int32_t bottom;
+};
+
+struct sl_insets sl_frame_insets(int maximized, int fullscreen, int32_t border, int32_t titlebar);
+uint32_t sl_frame_edges(int32_t width, int32_t height, int32_t x, int32_t y, int32_t thickness,
+			int32_t top_zone, int32_t corner_span);
+uint32_t sl_edge_cursor_glyph(uint32_t edges);
+void sl_configure_notify(uint8_t *out, uint32_t window, int32_t x, int32_t y, uint32_t width,
+			 uint32_t height, uint32_t border_width);
+
 int sl_rect_contains(const struct sl_rect *rect, int32_t x, int32_t y);
 int sl_strut_parse(const uint32_t *values, size_t count, struct sl_strut *strut);
 void sl_strut_merge(struct sl_strut *into, const struct sl_strut *other);
