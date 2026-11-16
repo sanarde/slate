@@ -119,17 +119,35 @@ impl Wm {
     }
 
     pub(super) fn arrange(&mut self) -> Result<()> {
-        let workspace = self.workspace;
-        let current = self.workspace_layouts[workspace];
+        for monitor in 0..self.work_areas.len() {
+            self.arrange_monitor(monitor)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn layout_on(&self, monitor: usize, workspace: usize) -> WorkspaceLayout {
+        self.workspace_layouts[monitor.min(self.workspace_layouts.len() - 1)][workspace.min(super::WORKSPACE_LIMIT - 1)]
+    }
+
+    pub(super) fn layout_mut(&mut self, monitor: usize, workspace: usize) -> &mut WorkspaceLayout {
+        let monitor = monitor.min(self.workspace_layouts.len() - 1);
+        &mut self.workspace_layouts[monitor][workspace.min(super::WORKSPACE_LIMIT - 1)]
+    }
+
+    fn arrange_monitor(&mut self, monitor: usize) -> Result<()> {
+        let workspace = self.workspace_on(monitor);
+        let current = self.layout_on(monitor, workspace);
 
         let order: Vec<Window> = self
             .tile_order
             .iter()
             .copied()
             .filter(|window| {
-                self.clients
-                    .iter()
-                    .any(|client| client.window == *window && client.workspace == workspace)
+                self.clients.iter().any(|client| {
+                    client.window == *window
+                        && client.workspace == workspace
+                        && self.monitor_index(&client.rect) == monitor
+                })
             })
             .collect();
 
@@ -158,27 +176,24 @@ impl Wm {
             master_count: current.masters,
         };
 
-        for monitor in 0..self.work_areas.len() {
-            let area = self.work_areas[monitor];
-            let area = Area {
-                x: area.x,
-                y: area.y,
-                w: area.w as i32,
-                h: area.h as i32,
-            };
-
-            let group: Vec<Window> = order
-                .iter()
-                .copied()
-                .filter(|window| {
-                    let index = self.clients.iter().position(|client| client.window == *window).unwrap();
-                    self.eligible(index) && self.monitor_index(&self.clients[index].rect) == monitor
-                })
-                .collect();
-            let tiles = layout::arrange(current.layout, area, group.len(), &params);
-            for (window, tile) in group.into_iter().zip(tiles) {
-                self.apply_tile(window, tile)?;
-            }
+        let area = self.work_areas[monitor];
+        let area = Area {
+            x: area.x,
+            y: area.y,
+            w: area.w as i32,
+            h: area.h as i32,
+        };
+        let group: Vec<Window> = order
+            .iter()
+            .copied()
+            .filter(|window| {
+                let index = self.clients.iter().position(|client| client.window == *window).unwrap();
+                self.eligible(index)
+            })
+            .collect();
+        let tiles = layout::arrange(current.layout, area, group.len(), &params);
+        for (window, tile) in group.into_iter().zip(tiles) {
+            self.apply_tile(window, tile)?;
         }
         Ok(())
     }
@@ -199,7 +214,8 @@ impl Wm {
 
     pub(super) fn toggle_tiling(&mut self) -> Result<()> {
         let default = self.settings.tiling.layout;
-        let entry = &mut self.workspace_layouts[self.workspace];
+        let (monitor, workspace) = (self.active_monitor, self.workspace());
+        let entry = self.layout_mut(monitor, workspace);
         entry.layout = if entry.layout.tiles() {
             Layout::Floating
         } else if default.tiles() {
@@ -211,7 +227,8 @@ impl Wm {
     }
 
     pub(super) fn layout_next(&mut self) -> Result<()> {
-        let entry = &mut self.workspace_layouts[self.workspace];
+        let (monitor, workspace) = (self.active_monitor, self.workspace());
+        let entry = self.layout_mut(monitor, workspace);
         entry.layout = entry.layout.next();
         self.arrange()
     }
@@ -241,14 +258,16 @@ impl Wm {
     }
 
     pub(super) fn master_ratio(&mut self, grow: bool) -> Result<()> {
-        let entry = &mut self.workspace_layouts[self.workspace];
+        let (monitor, workspace) = (self.active_monitor, self.workspace());
+        let entry = self.layout_mut(monitor, workspace);
         let step = if grow { RATIO_STEP } else { -RATIO_STEP };
         entry.ratio = (entry.ratio + step).clamp(0.1, 0.9);
         self.arrange()
     }
 
     pub(super) fn master_count(&mut self, more: bool) -> Result<()> {
-        let entry = &mut self.workspace_layouts[self.workspace];
+        let (monitor, workspace) = (self.active_monitor, self.workspace());
+        let entry = self.layout_mut(monitor, workspace);
         entry.masters = if more {
             (entry.masters + 1).min(MAX_MASTERS)
         } else {
@@ -257,13 +276,17 @@ impl Wm {
         self.arrange()
     }
 
-    fn eligible_order(&self, workspace: usize) -> Vec<Window> {
+    fn eligible_order(&self, monitor: usize) -> Vec<Window> {
+        let workspace = self.workspace_on(monitor);
         self.tile_order
             .iter()
             .copied()
             .filter(|window| {
                 self.clients.iter().enumerate().any(|(index, client)| {
-                    client.window == *window && client.workspace == workspace && self.eligible(index)
+                    client.window == *window
+                        && client.workspace == workspace
+                        && self.monitor_index(&client.rect) == monitor
+                        && self.eligible(index)
                 })
             })
             .collect()
@@ -280,7 +303,7 @@ impl Wm {
     }
 
     pub(super) fn promote(&mut self, window: Window) -> Result<()> {
-        let siblings = self.eligible_order(self.workspace);
+        let siblings = self.eligible_order(self.active_monitor);
         let Some(first) = siblings.first().copied() else {
             return Ok(());
         };
@@ -292,7 +315,7 @@ impl Wm {
     }
 
     pub(super) fn swap_neighbor(&mut self, window: Window, forward: bool) -> Result<()> {
-        let siblings = self.eligible_order(self.workspace);
+        let siblings = self.eligible_order(self.active_monitor);
         let Some(index) = siblings.iter().position(|candidate| *candidate == window) else {
             return Ok(());
         };
@@ -310,8 +333,10 @@ impl Wm {
 
     pub(super) fn reset_layouts(&mut self) {
         let tiling = self.settings.tiling.clone();
-        for entry in &mut self.workspace_layouts {
-            *entry = WorkspaceLayout::new(&tiling);
+        for monitor in &mut self.workspace_layouts {
+            for entry in monitor.iter_mut() {
+                *entry = WorkspaceLayout::new(&tiling);
+            }
         }
     }
 }

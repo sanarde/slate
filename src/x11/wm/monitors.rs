@@ -35,17 +35,40 @@ impl Wm {
             (area.y + (area.h / 2) as i32) as i16,
         )?;
 
-        let workspace = self.workspace;
+        self.active_monitor = target;
         let top = self
             .clients
             .iter()
             .rev()
-            .find(|client| client.workspace == workspace && !client.hidden && self.monitor_index(&client.rect) == target)
+            .find(|client| self.visible_on(client, target) && !client.hidden)
             .map(|client| client.window);
         match top {
             Some(window) => self.focus(window),
             None => Ok(()),
         }
+    }
+
+    pub(super) fn bring_to_active_monitor(&mut self, window: Window) -> Result<()> {
+        let Some(index) = self.clients.iter().position(|client| client.window == window) else {
+            return Ok(());
+        };
+        let rect = self.clients[index].rect;
+        if self.monitor_index(&rect) == self.active_monitor {
+            return Ok(());
+        }
+        let area = self
+            .work_areas
+            .get(self.active_monitor)
+            .copied()
+            .unwrap_or(self.monitors[self.active_monitor]);
+        let moved = Rect::new(
+            area.x + (area.w.saturating_sub(rect.w) / 2) as i32,
+            area.y + (area.h.saturating_sub(rect.h) / 2) as i32,
+            rect.w,
+            rect.h,
+        );
+        let border = self.settings.border_width;
+        self.set_geometry(window, moved, border)
     }
 
     pub(super) fn move_to_monitor(&mut self, window: Window, direction: Direction) -> Result<()> {
@@ -77,6 +100,7 @@ impl Wm {
 
         let border = self.settings.border_width;
         self.set_geometry(window, moved, border)?;
+        self.adopt_monitor_workspace(window)?;
         self.arrange()?;
         self.restack()
     }

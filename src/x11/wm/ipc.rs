@@ -75,9 +75,9 @@ impl Handler for Wm {
         let workspaces = (0..self.settings.workspace_count)
             .map(|index| WorkspaceInfo {
                 index,
-                layout: self.workspace_layouts[index].layout.name().to_string(),
+                layout: self.layout_on(self.active_monitor, index).layout.name().to_string(),
                 windows: windows.iter().filter(|window| window.workspace == index).count(),
-                active: index == self.workspace,
+                active: index == self.workspace(),
             })
             .collect();
 
@@ -93,11 +93,12 @@ impl Handler for Wm {
                 height: monitor.h as i32,
                 scale: 1.0,
                 enabled: true,
+                workspace: self.workspace_on(index),
             })
             .collect();
 
         Snapshot {
-            workspace: self.workspace,
+            workspace: self.workspace(),
             focused: self.focused.map(|window| window as u64),
             workspaces,
             windows,
@@ -107,7 +108,10 @@ impl Handler for Wm {
 
     fn execute(&mut self, command: Command) -> Result<(), String> {
         let result = match command {
-            Command::Action(action) => self.run_action(action),
+            Command::Action(action) => {
+                self.active_monitor = self.pointer_monitor();
+                self.run_action(action)
+            }
             Command::Focus(id) => {
                 let window = self.known(id)?;
                 if self.clients.iter().any(|client| client.window == window && client.minimized) {
@@ -140,7 +144,8 @@ impl Handler for Wm {
                 if workspace >= self.settings.workspace_count {
                     return Err("there is no such workspace".to_string());
                 }
-                self.workspace_layouts[workspace].layout = layout;
+                let monitor = self.active_monitor;
+                self.layout_mut(monitor, workspace).layout = layout;
                 self.emit(
                     "layout",
                     &[
@@ -148,11 +153,7 @@ impl Handler for Wm {
                         ("layout", json::quote(layout.name())),
                     ],
                 );
-                if workspace == self.workspace {
-                    self.arrange()
-                } else {
-                    Ok(())
-                }
+                self.arrange()
             }
             Command::Version | Command::State | Command::Windows | Command::Workspaces | Command::Outputs => Ok(()),
         };

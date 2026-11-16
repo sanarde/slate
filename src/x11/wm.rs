@@ -38,7 +38,7 @@ use crate::spawn;
 
 const POLL_SECONDS: i64 = 1;
 const ICONIC_STATE: u32 = 3;
-const WORKSPACE_LIMIT: usize = 9;
+pub(super) const WORKSPACE_LIMIT: usize = 9;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -116,8 +116,9 @@ pub struct Wm {
     focused: Option<Window>,
     minimize_order: Vec<Window>,
     tile_order: Vec<Window>,
-    workspace_layouts: Vec<WorkspaceLayout>,
-    workspace: usize,
+    workspace_layouts: Vec<Vec<WorkspaceLayout>>,
+    monitor_workspaces: Vec<usize>,
+    active_monitor: usize,
     settings: Settings,
     config: ConfigSource,
     mod_mask: u16,
@@ -181,8 +182,9 @@ impl Wm {
             focused: None,
             minimize_order: Vec::new(),
             tile_order: Vec::new(),
-            workspace_layouts: vec![WorkspaceLayout::new(&settings.tiling); WORKSPACE_LIMIT],
-            workspace: 0,
+            workspace_layouts: vec![vec![WorkspaceLayout::new(&settings.tiling); WORKSPACE_LIMIT]],
+            monitor_workspaces: vec![0],
+            active_monitor: 0,
             mod_mask: mod_mask_of(settings.mod_key),
             settings,
             config,
@@ -201,7 +203,7 @@ impl Wm {
             running: true,
         };
 
-        wm.workspace = wm.inherited_workspace();
+        wm.monitor_workspaces[0] = wm.inherited_workspace();
         wm.set_cursor()?;
         wm.create_cursors()?;
         wm.publish_root_properties()?;
@@ -259,6 +261,7 @@ impl Wm {
             }
             self.serve_ipc();
             self.reload_settings()?;
+            self.refresh_monitors()?;
         }
         Ok(())
     }
@@ -321,8 +324,10 @@ impl Wm {
 
     fn clamp_workspaces(&mut self) -> Result<()> {
         let last = self.settings.workspace_count.saturating_sub(1);
-        if self.workspace > last {
-            self.switch_workspace(last)?;
+        for monitor in 0..self.monitor_workspaces.len() {
+            if self.monitor_workspaces[monitor] > last {
+                self.switch_workspace_on(monitor, last)?;
+            }
         }
 
         for index in 0..self.clients.len() {
@@ -338,7 +343,8 @@ impl Wm {
                 AtomEnum::CARDINAL,
                 &[last as u32],
             )?;
-            if last == self.workspace && self.clients[index].hidden && !self.clients[index].minimized {
+            let monitor = self.monitor_index(&self.clients[index].rect);
+            if last == self.workspace_on(monitor) && self.clients[index].hidden && !self.clients[index].minimized {
                 self.sync_frame(window)?;
                 self.clients[index].hidden = false;
                 self.map_client(window)?;
@@ -444,7 +450,7 @@ impl Wm {
         self.conn
             .change_property32(PropMode::REPLACE, self.root, atoms._NET_NUMBER_OF_DESKTOPS, AtomEnum::CARDINAL, &[self.settings.workspace_count as u32])?;
         self.conn
-            .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[self.workspace as u32])?;
+            .change_property32(PropMode::REPLACE, self.root, atoms._NET_CURRENT_DESKTOP, AtomEnum::CARDINAL, &[self.workspace() as u32])?;
         self.conn.change_property32(
             PropMode::REPLACE,
             self.root,
@@ -501,6 +507,7 @@ impl Wm {
     }
 
     fn refresh_monitors(&mut self) -> Result<()> {
+        let previous = self.monitors.clone();
         let reply = self.conn.randr_get_monitors(self.root, true)?.reply()?;
         self.monitors = reply
             .monitors
@@ -510,6 +517,15 @@ impl Wm {
         if self.monitors.is_empty() {
             self.monitors.push(self.screen);
         }
+        if self.monitors == previous {
+            return Ok(());
+        }
+        let count = self.monitors.len();
+        self.monitor_workspaces.resize(count, 0);
+        let tiling = self.settings.tiling.clone();
+        self.workspace_layouts
+            .resize_with(count, || vec![WorkspaceLayout::new(&tiling); WORKSPACE_LIMIT]);
+        self.active_monitor = self.active_monitor.min(count - 1);
         self.update_work_areas()
     }
 
@@ -590,7 +606,7 @@ impl Wm {
             .unwrap_or(0)
     }
 
-    fn pointer_monitor(&self) -> usize {
+    pub(super) fn pointer_monitor(&self) -> usize {
         let pointer = self.conn.query_pointer(self.root).ok().and_then(|cookie| cookie.reply().ok());
         let Some(pointer) = pointer else {
             return 0;
@@ -599,6 +615,40 @@ impl Wm {
             .iter()
             .position(|monitor| monitor.contains(pointer.root_x as i32, pointer.root_y as i32))
             .unwrap_or(0)
+    }
+
+    fn workspace(&self) -> usize {
+        self.workspace_on(self.active_monitor)
+    }
+
+    fn workspace_on(&self, monitor: usize) -> usize {
+        self.monitor_workspaces.get(monitor).copied().unwrap_or(0)
+    }
+
+    fn visible_on(&self, client: &Client, monitor: usize) -> bool {
+        !client.minimized
+            && self.monitor_index(&client.rect) == monitor
+            && (client.rule.sticky || client.workspace == self.workspace_on(monitor))
+    }
+
+    fn adopt_monitor_workspace(&mut self, window: Window) -> Result<()> {
+        let Some(index) = self.clients.iter().position(|client| client.window == window) else {
+            return Ok(());
+        };
+        let monitor = self.monitor_index(&self.clients[index].rect);
+        let workspace = self.workspace_on(monitor);
+        if self.clients[index].rule.sticky || self.clients[index].workspace == workspace || self.clients[index].hidden {
+            return Ok(());
+        }
+        self.clients[index].workspace = workspace;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            self.atoms._NET_WM_DESKTOP,
+            AtomEnum::CARDINAL,
+            &[workspace as u32],
+        )?;
+        Ok(())
     }
 
     fn inherited_workspace(&self) -> usize {
@@ -642,7 +692,7 @@ impl Wm {
         self.adopting = false;
 
         for (window, desktop) in moves {
-            if desktop < self.settings.workspace_count && desktop != self.workspace {
+            if desktop < self.settings.workspace_count && desktop != self.workspace() {
                 self.move_to_workspace(window, desktop)?;
             }
         }
@@ -686,7 +736,9 @@ impl Wm {
                 }
             }
             Event::ButtonRelease(_) => {
-                self.drag = None;
+                if let Some(drag) = self.drag.take() {
+                    self.adopt_monitor_workspace(drag.window)?;
+                }
                 self.frame_release()
             }
             Event::RandrScreenChangeNotify(_) => self.refresh_monitors(),
@@ -777,6 +829,9 @@ impl Wm {
         let protocols = self.atoms_of(window, self.atoms.WM_PROTOCOLS);
 
         let monitor = self.pointer_monitor();
+        if !self.adopting {
+            self.active_monitor = monitor;
+        }
         let area = self.work_areas.get(monitor).copied().unwrap_or(self.screen);
         let border = self.settings.border_width;
         let title = if self.should_frame(window) {
@@ -834,7 +889,7 @@ impl Wm {
             fullscreen: false,
             delete: protocols.contains(&self.atoms.WM_DELETE_WINDOW),
             take_focus: protocols.contains(&self.atoms.WM_TAKE_FOCUS),
-            workspace: self.workspace,
+            workspace: self.workspace(),
             hidden: false,
             minimized: false,
             floating: false,
@@ -849,7 +904,7 @@ impl Wm {
             shaped: None,
             rule: applied.clone(),
         });
-        let desktop = if applied.sticky { u32::MAX } else { self.workspace as u32 };
+        let desktop = if applied.sticky { u32::MAX } else { self.workspace() as u32 };
         self.conn.change_property32(
             PropMode::REPLACE,
             window,
@@ -893,7 +948,7 @@ impl Wm {
         if fresh
             && !applied.sticky
             && let Some(target) = applied.workspace.filter(|target| *target < self.settings.workspace_count)
-            && target != self.workspace
+            && target != self.workspace()
         {
             self.move_to_workspace(window, target)?;
         }
@@ -901,7 +956,7 @@ impl Wm {
     }
 
     fn toggle_scratchpad(&mut self, name: &str) -> Result<()> {
-        let current = self.workspace;
+        let current = self.workspace();
         let found = self
             .clients
             .iter()
@@ -917,12 +972,14 @@ impl Wm {
                 }
             }
             Some((window, true, _)) => {
+                self.bring_to_active_monitor(window)?;
                 if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
                     client.workspace = current;
                 }
                 self.restore(window)
             }
             Some((window, false, true)) => {
+                self.bring_to_active_monitor(window)?;
                 if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
                     client.workspace = current;
                 }
@@ -984,19 +1041,28 @@ impl Wm {
     }
 
     fn switch_workspace(&mut self, target: usize) -> Result<()> {
-        if target >= self.settings.workspace_count || target == self.workspace {
+        self.switch_workspace_on(self.active_monitor, target)
+    }
+
+    fn switch_workspace_on(&mut self, monitor: usize, target: usize) -> Result<()> {
+        if target >= self.settings.workspace_count || target == self.workspace_on(monitor) {
             return Ok(());
         }
-        self.workspace = target;
-        for client in self.clients.iter_mut().filter(|client| client.rule.sticky) {
-            client.workspace = target;
+        if let Some(slot) = self.monitor_workspaces.get_mut(monitor) {
+            *slot = target;
+        }
+        for index in 0..self.clients.len() {
+            if self.clients[index].rule.sticky && self.monitor_index(&self.clients[index].rect) == monitor {
+                self.clients[index].workspace = target;
+            }
         }
 
         let changes: Vec<(Window, bool)> = self
             .clients
             .iter()
+            .filter(|client| self.monitor_index(&client.rect) == monitor)
             .filter_map(|client| {
-                let visible = client.workspace == target && !client.minimized;
+                let visible = (client.workspace == target || client.rule.sticky) && !client.minimized;
                 if visible && client.hidden {
                     Some((client.window, true))
                 } else if !visible && !client.hidden {
@@ -1016,19 +1082,37 @@ impl Wm {
                 self.unmap_client(window)?;
             }
         }
-        self.conn.change_property32(
-            PropMode::REPLACE,
-            self.root,
-            self.atoms._NET_CURRENT_DESKTOP,
-            AtomEnum::CARDINAL,
-            &[target as u32],
-        )?;
+        if monitor == self.active_monitor {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.root,
+                self.atoms._NET_CURRENT_DESKTOP,
+                AtomEnum::CARDINAL,
+                &[target as u32],
+            )?;
+        }
         self.arrange()?;
-        self.emit("workspace", &[("index", (target + 1).to_string())]);
+        self.emit(
+            "workspace",
+            &[
+                ("index", (target + 1).to_string()),
+                ("output", crate::json::quote(&format!("monitor-{}", monitor + 1))),
+            ],
+        );
 
-        self.focused = None;
-        let top = self.focus_candidate(target);
-        match top {
+        let focus_here = self
+            .focused
+            .and_then(|window| self.clients.iter().find(|client| client.window == window))
+            .is_none_or(|client| self.monitor_index(&client.rect) == monitor);
+        if focus_here {
+            self.focused = None;
+            return self.refocus(monitor);
+        }
+        Ok(())
+    }
+
+    fn refocus(&mut self, monitor: usize) -> Result<()> {
+        match self.focus_candidate(monitor) {
             Some(window) => self.focus(window),
             None => {
                 self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -1048,6 +1132,7 @@ impl Wm {
             return Ok(());
         }
         client.workspace = target;
+        let monitor = self.monitor_index(&self.clients.iter().find(|client| client.window == window).unwrap().rect);
         self.conn.change_property32(
             PropMode::REPLACE,
             window,
@@ -1055,24 +1140,18 @@ impl Wm {
             AtomEnum::CARDINAL,
             &[target as u32],
         )?;
-        if target == self.workspace {
+        if target == self.workspace_on(monitor) {
             return Ok(());
         }
 
-        client.hidden = true;
+        if let Some(client) = self.clients.iter_mut().find(|client| client.window == window) {
+            client.hidden = true;
+        }
         self.unmap_client(window)?;
 
         self.arrange()?;
-        let current = self.workspace;
-        let top = self.focus_candidate(current);
-        match top {
-            Some(top) => self.focus(top),
-            None => {
-                self.focused = None;
-                self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
-                self.set_active_window(NONE)
-            }
-        }
+        self.focused = None;
+        self.refocus(monitor)
     }
 
     fn unmanage(&mut self, window: Window) -> Result<()> {
@@ -1086,6 +1165,7 @@ impl Wm {
         };
         self.emit("window-close", &[("id", window.to_string())]);
         let removed = self.clients.remove(index);
+        let removed_monitor = self.monitor_index(&removed.rect);
         if let Some(frame) = removed.frame {
             self.conn
                 .reparent_window(window, self.root, removed.rect.x as i16, removed.rect.y as i16)?;
@@ -1105,8 +1185,7 @@ impl Wm {
 
         if self.focused == Some(window) {
             self.focused = None;
-            let current = self.workspace;
-            match self.focus_candidate(current) {
+            match self.focus_candidate(removed_monitor) {
                 Some(top) => self.focus(top)?,
                 None => {
                     self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -1146,9 +1225,11 @@ impl Wm {
             return Ok(());
         };
         let workspace = self.clients[index].workspace;
-        if workspace != self.workspace && !self.clients[index].minimized {
-            self.switch_workspace(workspace)?;
+        let monitor = self.monitor_index(&self.clients[index].rect);
+        if workspace != self.workspace_on(monitor) && !self.clients[index].minimized && !self.clients[index].rule.sticky {
+            self.switch_workspace_on(monitor, workspace)?;
         }
+        self.active_monitor = monitor;
         let Some(index) = self.clients.iter().position(|client| client.window == window) else {
             return Ok(());
         };
@@ -1198,8 +1279,8 @@ impl Wm {
 
         if self.focused == Some(window) {
             self.focused = None;
-            let current = self.workspace;
-            match self.focus_candidate(current) {
+            let monitor = self.clients.iter().find(|client| client.window == window).map_or(0, |client| self.monitor_index(&client.rect));
+            match self.focus_candidate(monitor) {
                 Some(top) => self.focus(top)?,
                 None => {
                     self.conn.set_input_focus(InputFocus::POINTER_ROOT, self.root, CURRENT_TIME)?;
@@ -1220,10 +1301,12 @@ impl Wm {
         }
         client.minimized = false;
         let workspace = client.workspace;
+        let rect = client.rect;
         self.minimize_order.retain(|minimized| *minimized != window);
 
-        if workspace != self.workspace {
-            self.switch_workspace(workspace)?;
+        let monitor = self.monitor_index(&rect);
+        if workspace != self.workspace_on(monitor) {
+            self.switch_workspace_on(monitor, workspace)?;
         } else if self.clients.iter().any(|client| client.window == window && client.hidden) {
             self.sync_frame(window)?;
             self.set_hidden(window, false);
@@ -1234,11 +1317,11 @@ impl Wm {
         self.focus(window)
     }
 
-    fn focus_candidate(&self, workspace: usize) -> Option<Window> {
+    fn focus_candidate(&self, monitor: usize) -> Option<Window> {
         self.clients
             .iter()
             .rev()
-            .find(|client| client.workspace == workspace && !client.minimized && (client.accepts_input || client.take_focus))
+            .find(|client| self.visible_on(client, monitor) && (client.accepts_input || client.take_focus))
             .map(|client| client.window)
     }
 
@@ -1493,11 +1576,11 @@ impl Wm {
     }
 
     fn cycle_focus(&mut self, forward: bool) -> Result<()> {
-        let current = self.workspace;
+        let monitor = self.active_monitor;
         let candidates: Vec<Window> = self
             .clients
             .iter()
-            .filter(|client| client.workspace == current && !client.hidden && (client.accepts_input || client.take_focus))
+            .filter(|client| self.visible_on(client, monitor) && !client.hidden && (client.accepts_input || client.take_focus))
             .map(|client| client.window)
             .collect();
         if candidates.len() < 2 {
@@ -1519,6 +1602,9 @@ impl Wm {
     }
 
     fn key_press(&mut self, event: &KeyPressEvent) -> Result<()> {
+        if let Some(monitor) = self.monitors.iter().position(|monitor| monitor.contains(event.root_x as i32, event.root_y as i32)) {
+            self.active_monitor = monitor;
+        }
         let held = u16::from(event.state)
             & (u16::from(ModMask::SHIFT) | u16::from(ModMask::CONTROL) | u16::from(ModMask::M1) | u16::from(ModMask::M4));
         let action = self
@@ -1573,10 +1659,10 @@ impl Wm {
             }
             Action::Quit => self.running = false,
             Action::WorkspaceNext => {
-                let target = (self.workspace + 1).min(self.settings.workspace_count.saturating_sub(1));
+                let target = (self.workspace() + 1).min(self.settings.workspace_count.saturating_sub(1));
                 self.switch_workspace(target)?
             }
-            Action::WorkspacePrevious => self.switch_workspace(self.workspace.saturating_sub(1))?,
+            Action::WorkspacePrevious => self.switch_workspace(self.workspace().saturating_sub(1))?,
             Action::FocusMonitor(direction) => self.focus_monitor(direction)?,
             Action::MoveToMonitor(direction) => {
                 if let Some(window) = self.focused {

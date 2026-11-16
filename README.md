@@ -81,7 +81,7 @@ Key bindings. Mod is Super, except in `winit` where it is Alt. The bindings belo
 | Mod+right button, drag | Resize the window |
 | Ctrl+Alt+F1 to F12 | Switch virtual terminal (`udev` only) |
 
-Focus follows clicks. There are nine workspaces shared by all outputs.
+Focus follows clicks. There are nine workspaces on every output, each output shows its own.
 
 The Wayland backend implements xdg-shell, wlr-layer-shell, wlr-output-management, wlr-screencopy, ext-session-lock, fractional-scale, linux-dmabuf, xdg-output, xdg-activation, the data device and primary selection, viewporter, cursor-shape, relative-pointer, pointer-gestures, single-pixel-buffer, idle-notify and XWayland. Output management supports position, scale, transform, mode and enabling or disabling outputs. Screen capture copies into shared memory buffers, so `grim` works, and portal based tools need `xdg-desktop-portal-wlr`. In a nested `winit` window only position and scale can change.
 
@@ -312,7 +312,7 @@ bind = Mod+grave=scratchpad term
 
 ## Monitors, gestures and touch
 
-Workspaces are shared by all monitors, like in a classic X11 session. Tiling lays out the windows of every monitor separately, a window belongs to the monitor it overlaps most. Bind `focus-monitor` and `move-to-monitor` to reach the other monitors from the keyboard:
+Every monitor has its own current workspace and its own layout for each workspace, like tags in awesome. `workspace N` switches the workspace of the monitor with the pointer (on X11 the monitor of the last key press or the focused window), the windows of the other monitors stay where they are. A window belongs to the monitor it overlaps most. A window that is moved to another monitor, with `move-to-monitor` or by dragging it, takes the workspace that this monitor shows. Tiling lays out the windows of every monitor separately. `slatectl outputs` and the `workspace` event tell which monitor shows which workspace. Bind `focus-monitor` and `move-to-monitor` to reach the other monitors from the keyboard:
 
 ```
 bind = Mod+Alt+Right=focus-monitor right
