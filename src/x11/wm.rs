@@ -154,6 +154,7 @@ pub struct Wm {
     ipc: Option<Ipc>,
     last_focus: Option<u64>,
     adopting: bool,
+    timing: crate::stats::Timing,
     running: bool,
 }
 
@@ -220,6 +221,7 @@ impl Wm {
             ipc: Ipc::start(),
             last_focus: None,
             adopting: false,
+            timing: Default::default(),
             running: true,
         };
 
@@ -259,9 +261,11 @@ impl Wm {
 
         while self.running {
             while let Some(event) = self.conn.poll_for_event()? {
+                let started = Instant::now();
                 if let Err(error) = self.dispatch(event) {
                     tracing::debug!(%error, "event handling failed");
                 }
+                self.timing.record(started.elapsed());
             }
             self.conn.flush()?;
             if !self.running {

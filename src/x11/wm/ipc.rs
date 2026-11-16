@@ -106,6 +106,10 @@ impl Handler for Wm {
         }
     }
 
+    fn stats(&mut self) -> String {
+        self.timing.json()
+    }
+
     fn execute(&mut self, command: Command) -> Result<(), String> {
         let result = match command {
             Command::Action(action) => {
@@ -155,7 +159,16 @@ impl Handler for Wm {
                 );
                 self.arrange()
             }
-            Command::Version | Command::State | Command::Windows | Command::Workspaces | Command::Outputs => Ok(()),
+            Command::StatsReset => {
+                self.timing.reset();
+                Ok(())
+            }
+            Command::Version
+            | Command::State
+            | Command::Windows
+            | Command::Workspaces
+            | Command::Outputs
+            | Command::Stats => Ok(()),
         };
         result.map_err(|error| error.to_string())?;
         let _ = self.conn.flush();

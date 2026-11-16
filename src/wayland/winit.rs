@@ -73,6 +73,7 @@ fn redraw(
     damage_tracker: &mut OutputDamageTracker,
     state: &mut Slate,
 ) -> Result<(), Box<dyn Error>> {
+    let started = std::time::Instant::now();
     let age = backend.buffer_age().unwrap_or(0);
 
     let damage = {
@@ -85,6 +86,7 @@ fn redraw(
     if let Some(damage) = damage {
         backend.submit(Some(&damage))?;
     }
+    state.frame_timing.record(started.elapsed());
 
     screencopy::process(state, backend.renderer(), output);
     state.send_frames(output);

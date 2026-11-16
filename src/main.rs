@@ -15,6 +15,7 @@ mod scheme;
 mod session;
 mod source;
 mod spawn;
+mod stats;
 mod themes;
 mod titlebar;
 mod wayland;

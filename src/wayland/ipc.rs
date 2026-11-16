@@ -131,6 +131,10 @@ impl Handler for Slate {
         }
     }
 
+    fn stats(&mut self) -> String {
+        self.frame_timing.json()
+    }
+
     fn execute(&mut self, command: Command) -> Result<(), String> {
         let window = |state: &Slate, id: u64| window_by_id(state, id).ok_or_else(|| format!("no window with id {id}"));
 
@@ -176,7 +180,13 @@ impl Handler for Slate {
                     ],
                 );
             }
-            Command::Version | Command::State | Command::Windows | Command::Workspaces | Command::Outputs => {}
+            Command::StatsReset => self.frame_timing.reset(),
+            Command::Version
+            | Command::State
+            | Command::Windows
+            | Command::Workspaces
+            | Command::Outputs
+            | Command::Stats => {}
         }
         Ok(())
     }

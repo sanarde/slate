@@ -35,6 +35,8 @@ pub enum Command {
     Windows,
     Workspaces,
     Outputs,
+    Stats,
+    StatsReset,
     Action(Action),
     Focus(u64),
     Close(u64),
@@ -86,6 +88,7 @@ pub struct Snapshot {
 
 pub trait Handler {
     fn snapshot(&mut self) -> Snapshot;
+    fn stats(&mut self) -> String;
     fn execute(&mut self, command: Command) -> Result<(), String>;
 }
 
@@ -265,6 +268,8 @@ pub fn parse(line: &str) -> Result<Command, String> {
         "windows" => Ok(Command::Windows),
         "workspaces" => Ok(Command::Workspaces),
         "outputs" => Ok(Command::Outputs),
+        "stats" => Ok(Command::Stats),
+        "stats-reset" => Ok(Command::StatsReset),
         "focus" => Ok(Command::Focus(id(0)?)),
         "close" => Ok(Command::Close(id(0)?)),
         "minimize" => Ok(Command::Minimize(id(0)?)),
@@ -377,6 +382,7 @@ pub fn handle(handler: &mut impl Handler, line: &str) -> String {
         Command::Windows => ok_response(windows_json(&handler.snapshot())),
         Command::Workspaces => ok_response(workspaces_json(&handler.snapshot())),
         Command::Outputs => ok_response(outputs_json(&handler.snapshot())),
+        Command::Stats => ok_response(handler.stats()),
         other => match handler.execute(other) {
             Ok(()) => ok_response("null".to_string()),
             Err(error) => error_response(&error),
@@ -406,6 +412,10 @@ mod tests {
     }
 
     impl Handler for Fake {
+        fn stats(&mut self) -> String {
+            json::object(&[("count", "3".to_string())])
+        }
+
         fn snapshot(&mut self) -> Snapshot {
             Snapshot {
                 workspace: 1,
@@ -447,6 +457,8 @@ mod tests {
     #[test]
     fn commands_are_parsed() {
         assert!(matches!(parse("focus 5"), Ok(Command::Focus(5))));
+        assert!(matches!(parse("stats"), Ok(Command::Stats)));
+        assert!(matches!(parse("stats-reset"), Ok(Command::StatsReset)));
         assert!(matches!(parse("move-to-workspace 5 2"), Ok(Command::MoveToWorkspace(5, 1))));
         assert!(matches!(parse("layout 3 grid"), Ok(Command::Layout(2, _))));
         assert!(matches!(parse("action workspace 4"), Ok(Command::Action(Action::Workspace(3)))));

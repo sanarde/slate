@@ -463,6 +463,7 @@ fn render(state: &mut Slate, crtc: crtc::Handle) {
 }
 
 fn render_surface(state: &mut Slate, renderer: &mut GlesRenderer, surface: &mut Surface) {
+    let started = std::time::Instant::now();
     let elements = render::output_elements(state, renderer, &surface.output, true);
     let result = surface
         .compositor
@@ -481,6 +482,7 @@ fn render_surface(state: &mut Slate, renderer: &mut GlesRenderer, surface: &mut 
         }
         Err(error) => tracing::warn!(%error, "failed to render the frame"),
     }
+    state.frame_timing.record(started.elapsed());
 
     screencopy::process(state, renderer, &surface.output);
     state.send_frames(&surface.output);

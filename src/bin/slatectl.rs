@@ -10,6 +10,7 @@ const USAGE: &str = "usage: slatectl COMMAND [ARGUMENT...]
 commands:
   state | windows | workspaces | outputs      print the state as JSON
   version                                     print the version
+  stats | stats-reset                         frame time (Wayland) or event time (X11), count, average, maximum and slow ones, in microseconds
   subscribe                                   print events as JSON lines until interrupted
   action ACTION [ARGUMENT...]                 run an action of the key bindings, for example: action workspace 2
   focus ID | close ID | minimize ID | restore ID
