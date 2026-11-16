@@ -10,7 +10,8 @@ use std::time::Instant;
 use smithay::backend::renderer::gles::GlesTexProgram;
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{PopupManager, Space, Window, layer_map_for_output};
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::keyboard::KeyboardHandle;
+use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatState};
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
@@ -86,6 +87,7 @@ pub struct Slate {
     pub foreign_toplevel: ForeignToplevelState,
     pub shadows: RefCell<HashMap<ShadowKey, ShadowSet>>,
     pub blur_program: RefCell<Option<Option<GlesTexProgram>>>,
+    pub blur_pool: RefCell<super::blur::BlurPool>,
     pub clip_program: RefCell<Option<Option<GlesTexProgram>>>,
     pub clip_styles: RefCell<HashMap<(u64, String), u64>>,
     pub workspace_layouts: HashMap<String, Vec<WorkspaceLayout>>,
@@ -196,6 +198,7 @@ impl Slate {
             foreign_toplevel: ForeignToplevelState::new(&display_handle),
             shadows: RefCell::new(HashMap::new()),
             blur_program: RefCell::new(None),
+            blur_pool: RefCell::new(Default::default()),
             clip_program: RefCell::new(None),
             clip_styles: RefCell::new(HashMap::new()),
             workspace_layouts: HashMap::new(),
@@ -244,6 +247,14 @@ impl Slate {
             udev: None,
             display_handle,
         })
+    }
+
+    pub fn pointer(&self) -> PointerHandle<Slate> {
+        self.seat.get_pointer().expect("the seat is created with a pointer")
+    }
+
+    pub fn keyboard(&self) -> KeyboardHandle<Slate> {
+        self.seat.get_keyboard().expect("the seat is created with a keyboard")
     }
 
     pub fn spawn(&self, command: &[String]) {

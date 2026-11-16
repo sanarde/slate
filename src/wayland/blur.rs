@@ -70,6 +70,40 @@ fn program(state: &Slate, renderer: &mut GlesRenderer) -> Option<GlesTexProgram>
         .clone()
 }
 
+const POOL_LIMIT: usize = 12;
+
+#[derive(Default)]
+pub struct BlurPool {
+    free: Vec<(Size<i32, Physical>, GlesTexture)>,
+    in_flight: Vec<(Size<i32, Physical>, GlesTexture)>,
+}
+
+impl BlurPool {
+    fn keep(&mut self, entry: (Size<i32, Physical>, GlesTexture)) {
+        if self.free.len() >= POOL_LIMIT {
+            self.free.remove(0);
+        }
+        self.free.push(entry);
+    }
+}
+
+pub fn recycle(state: &Slate) {
+    let mut pool = state.blur_pool.borrow_mut();
+    for entry in std::mem::take(&mut pool.in_flight) {
+        pool.keep(entry);
+    }
+}
+
+fn acquire(state: &Slate, renderer: &mut GlesRenderer, size: Size<i32, Physical>) -> Option<GlesTexture> {
+    {
+        let mut pool = state.blur_pool.borrow_mut();
+        if let Some(index) = pool.free.iter().position(|(known, _)| *known == size) {
+            return Some(pool.free.swap_remove(index).1);
+        }
+    }
+    texture(renderer, size)
+}
+
 fn texture(renderer: &mut GlesRenderer, size: Size<i32, Physical>) -> Option<GlesTexture> {
     let size: Size<i32, Buffer> = (size.w.max(1), size.h.max(1)).into();
     Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, size).ok()
@@ -130,7 +164,7 @@ pub fn element(
         return None;
     }
 
-    let mut backdrop = texture(renderer, mode.size)?;
+    let mut backdrop = acquire(state, renderer, mode.size)?;
     {
         let mut framebuffer = renderer.bind(&mut backdrop).ok()?;
         OutputDamageTracker::new(mode.size, scale, Transform::Normal)
@@ -145,8 +179,8 @@ pub fn element(
         (f64::from(physical.size.w), f64::from(physical.size.h)).into(),
     );
 
-    let mut first = texture(renderer, size)?;
-    let mut second = texture(renderer, size)?;
+    let mut first = acquire(state, renderer, size)?;
+    let mut second = acquire(state, renderer, size)?;
     let step_x = (2.0 * radius / mode.size.w as f32, 0.0);
     pass(renderer, &backdrop, from, &mut first, size, &program, step_x)?;
     let whole: Rectangle<f64, Buffer> = Rectangle::new((0.0, 0.0).into(), (f64::from(size.w), f64::from(size.h)).into());
@@ -157,6 +191,12 @@ pub fn element(
         pass(renderer, &first, whole, &mut second, size, &program, step_y)?;
     }
 
+    {
+        let mut pool = state.blur_pool.borrow_mut();
+        pool.keep((mode.size, backdrop));
+        pool.keep((size, first));
+        pool.in_flight.push((size, second.clone()));
+    }
     let buffer = TextureBuffer::from_texture(renderer, second, 1, Transform::Normal, None);
     let logical: Rectangle<f64, Logical> = physical.to_f64().to_logical(scale);
     let logical_size: Size<i32, Logical> = (logical.size.w.round() as i32, logical.size.h.round() as i32).into();
