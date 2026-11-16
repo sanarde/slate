@@ -113,7 +113,7 @@ bind = Mod+b=exec firefox
 
 ### With SanarDE
 
-The default theme `material-you` uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
+The default theme `material-you` follows Material Design 3: tonal surface containers for the titlebar, circular icon buttons with state layers (8 percent on hover, 12 percent when pressed), elevation 3 for the focused window and 1 for the others, and the emphasized motion curves with a short accelerating close. It uses the color scheme of Seurat, so titlebars and borders follow the wallpaper and the light or dark variant of the system, in the same way as applications that use SanarStyle. Settings made through cfgd, for example by a settings application, apply and the file only has to hold what the user wants to pin.
 
 ### File format
 
@@ -191,10 +191,12 @@ Animations: a window fades and grows when it opens or is restored, windows move 
 | `shadow-size` | 18 | Blur radius in pixels, 0 turns shadows off. |
 | `shadow-offset-x`, `shadow-offset-y` | 0, 6 | Shift of the shadow. |
 | `shadow-color-focused`, `shadow-color-unfocused` | `#00000073`, `#00000040` | Shadow colors with alpha. |
+| `elevation-focused`, `elevation-unfocused` | -1, -1 | Material Design 3 elevation level 0 to 5 for the shadow of the focused window and of the others. Levels 1 to 5 give a blur of 6, 10, 14, 18 and 22 pixels, an offset of 1, 3, 5, 7 and 9 pixels and a black of 18 to 34 percent. -1 uses the `shadow-*` keys above. |
 | `shadow-tiled` | false | Shadows under tiled windows. |
 | `animations` | true | Master switch. |
 | `animation-duration` | 200 | Milliseconds, 0 turns animations off. |
-| `animation-curve` | `ease-out` | `linear`, `ease-out`, `ease-in-out` or `overshoot`. |
+| `animation-curve` | `ease-out` | `linear`, `ease-out`, `ease-in-out`, `overshoot` or a Material Design 3 curve: `standard`, `standard-decelerate`, `standard-accelerate`, `emphasized`, `emphasized-decelerate`, `emphasized-accelerate`. |
+| `animation-close-curve`, `animation-close-duration` | `ease-out`, 200 | Easing and milliseconds of the close animation, 0 turns it off. |
 | `animate-open`, `animate-move`, `animate-workspace` | true | Switches for opening and restoring, moving and resizing, and workspace changes. |
 | `animate-close` | true | Close animation, see above. |
 | `animation-open-scale` | 94 | Percent of its size that an opening window starts from and a closing window shrinks to. |
@@ -254,7 +256,7 @@ Both backends draw titlebars and borders themselves. On Wayland this is done for
 | `button-layout` | `:minimize,maximize,close` | `LEFT:RIGHT` lists of `close`, `maximize` and `minimize`. |
 | `button-size`, `button-spacing`, `button-margin` | 18, 6, 8 | Pixels. |
 | `button-shape` | `circle` | `circle`, `rounded` or `square`. |
-| `button-color`, `button-hover-color`, `button-close-hover-color` | `#00000000`, `#ffffff33`, `#e5484d` | Button backgrounds. |
+| `button-color`, `button-hover-color`, `button-pressed-color`, `button-close-hover-color` | `#00000000`, `#ffffff33`, `#ffffff4d`, `#e5484d` | Button backgrounds. The pressed color applies while the mouse button is held, the close button keeps its hover color. |
 | `button-icon-color-focused`, `button-icon-color-unfocused` | `#ffffff`, `#cac4d0` | Icon colors. |
 | `titlebar-double-click`, `titlebar-middle-click`, `titlebar-right-click` | `maximize`, `none`, `none` | `none`, `maximize`, `minimize`, `fullscreen` or `close`. |
 

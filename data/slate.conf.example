@@ -140,7 +140,13 @@ theme = material-you
 #exec-once = waybar
 #xdg-autostart = true
 
-# Effects, Wayland only.
+# Effects, Wayland only. elevation-focused and elevation-unfocused take a Material Design 3 level 0 to 5
+# instead of the shadow-* keys, animation-curve also takes standard, emphasized and their -decelerate and
+# -accelerate variants.
+#elevation-focused = 3
+#elevation-unfocused = 1
+#animation-curve = emphasized-decelerate
+#animation-close-curve = emphasized-accelerate
 #round-content = true
 #dim-inactive = 0
 #animate-close = true
