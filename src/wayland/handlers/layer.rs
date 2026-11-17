@@ -7,6 +7,7 @@ use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::desktop::WindowSurfaceType;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor;
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::{self, Anchor, Layer, LayerSurfaceAttributes, LayerSurfaceCachedState, WlrLayerShellHandler, WlrLayerShellState};
 use std::sync::Mutex;
 use smithay::wayland::shell::xdg::PopupSurface;
@@ -55,6 +56,14 @@ impl WlrLayerShellHandler for Slate {
             if let Some(layer) = layer {
                 map.unmap_layer(&layer);
             }
+        }
+        let keyboard = self.seat.get_keyboard().unwrap();
+        let held = keyboard
+            .current_focus()
+            .is_some_and(|focus| focus.wl_surface().as_deref() == Some(surface.wl_surface()));
+        if held && self.lock.is_none() {
+            let top = self.space.elements().next_back().cloned();
+            super::super::shell::focus_window(self, top.as_ref(), smithay::utils::SERIAL_COUNTER.next_serial());
         }
     }
 }

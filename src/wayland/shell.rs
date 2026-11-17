@@ -11,7 +11,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::shell::wlr_layer::LayerSurfaceData;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, LayerSurfaceData};
 use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::xwayland::X11Surface;
 
@@ -898,5 +899,17 @@ fn handle_layer_commit(state: &mut Slate, surface: &WlSurface) {
     });
     if !initial_configure_sent {
         layer.layer_surface().send_configure();
+    }
+
+    let exclusive = layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive;
+    let mapped = with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
+    if exclusive && mapped && state.lock.is_none() {
+        let keyboard = state.seat.get_keyboard().unwrap();
+        let focused = keyboard
+            .current_focus()
+            .is_some_and(|focus| focus.wl_surface().as_deref() == Some(surface));
+        if !focused {
+            keyboard.set_focus(state, Some(KeyFocus::Wayland(surface.clone())), SERIAL_COUNTER.next_serial());
+        }
     }
 }
