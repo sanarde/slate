@@ -45,6 +45,10 @@ impl CompositorHandler for Slate {
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
+    fn new_surface(&mut self, surface: &WlSurface) {
+        layer::guard_destroyed_role(surface);
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Slate>(surface);
         shell::handle_commit(self, surface);

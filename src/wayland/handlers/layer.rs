@@ -4,7 +4,11 @@ use smithay::delegate_layer_shell;
 use smithay::desktop::{LayerSurface, PopupKind, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
-use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellHandler, WlrLayerShellState};
+use smithay::desktop::WindowSurfaceType;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::compositor;
+use smithay::wayland::shell::wlr_layer::{self, Anchor, Layer, LayerSurfaceAttributes, LayerSurfaceCachedState, WlrLayerShellHandler, WlrLayerShellState};
+use std::sync::Mutex;
 use smithay::wayland::shell::xdg::PopupSurface;
 
 use super::super::state::Slate;
@@ -53,6 +57,28 @@ impl WlrLayerShellHandler for Slate {
             }
         }
     }
+}
+
+pub fn guard_destroyed_role(surface: &WlSurface) {
+    compositor::add_pre_commit_hook::<Slate, _>(surface, |state, _display, surface| {
+        let had_role = compositor::with_states(surface, |states| states.data_map.get::<Mutex<LayerSurfaceAttributes>>().is_some());
+        if !had_role {
+            return;
+        }
+        let mapped = state.space.outputs().any(|output| {
+            layer_map_for_output(output).layer_for_surface(surface, WindowSurfaceType::TOPLEVEL).is_some()
+        });
+        if mapped {
+            return;
+        }
+        compositor::with_states(surface, |states| {
+            let mut cached = states.cached_state.get::<LayerSurfaceCachedState>();
+            let pending = cached.pending();
+            if pending.size.w == 0 && pending.size.h == 0 && pending.anchor.is_empty() {
+                pending.anchor = Anchor::all();
+            }
+        });
+    });
 }
 
 delegate_layer_shell!(Slate);
